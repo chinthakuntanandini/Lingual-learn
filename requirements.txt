@@ -1,0 +1,6 @@
+streamlit
+speechrecognition
+googletrans==4.0.0-rc1
+gTTS
+fpdf2
+PyAudio
