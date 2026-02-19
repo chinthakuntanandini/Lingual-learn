@@ -10,9 +10,6 @@ import os
 
 # --- 1. FFmpeg Configuration ---
 # Ensure ffmpeg.exe and ffprobe.exe are in C:\ffmpeg\bin
-pydub.AudioSegment.converter = r"C:\ffmpeg\bin\ffmpeg.exe"
-pydub.AudioSegment.ffprobe = r"C:\ffmpeg\bin\ffprobe.exe"
-
 # --- 2. Page Setup ---
 st.set_page_config(page_title="LinguaLearn AI", layout="wide")
 st.title("LinguaLearn: AI Inclusive Classroom 🎓")
@@ -112,4 +109,5 @@ with tab3:
     user_input = st.text_area("Enter Text:")
     if user_input and st.button("Translate Now"):
         quick_trans = translator.translate(user_input, dest=languages[std_lang]["trans"]).text
+
         st.write(f"**Result:** {quick_trans}")
