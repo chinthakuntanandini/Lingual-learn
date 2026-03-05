@@ -2,3 +2,4 @@ streamlit
 firebase-admin
 google-cloud-speech
 google-cloud-translate
+streamlit-mic-recorder
