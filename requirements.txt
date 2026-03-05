@@ -1,7 +1,4 @@
 streamlit
-googletrans==3.1.0a0
-gTTS
-speechrecognition
-pydub
-pypdf2
-streamlit-mic-recorder
+firebase-admin
+google-cloud-speech
+google-cloud-translate
