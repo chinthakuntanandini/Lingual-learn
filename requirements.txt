@@ -5,3 +5,4 @@ google-cloud-translate
 streamlit-mic-recorder
 googletrans==4.0.0-rc1
 pydub
+PyPDF2
