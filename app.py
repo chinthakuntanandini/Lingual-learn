@@ -8,18 +8,25 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # --- 1. Firebase Configuration using Streamlit Secrets ---
-# We are now using the data from the Secrets tab instead of a local file.
+# We are using st.secrets to securely load the Firebase credentials.
 if not firebase_admin._apps:
     try:
-        # Fetching the secret key dictionary from Streamlit settings
-        # Ensure you have [firebase_key] set up in your Streamlit Cloud Secrets!
-        key_dict = dict(st.secrets["firebase_key"])
+        # Load the [firebase_key] section from Streamlit Cloud Secrets
+        secret_info = st.secrets["firebase_key"]
+        
+        # Convert the secret to a dictionary and fix the private_key formatting
+        # This replaces literal '\n' characters to ensure the JWT signature is valid.
+        key_dict = dict(secret_info)
+        if "private_key" in key_dict:
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+        
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"Firebase Connection Error: {e}")
-        st.info("Check your Streamlit Cloud Secrets tab for the [firebase_key] configuration.")
+        st.info("Please verify your [firebase_key] in the Streamlit Secrets tab.")
 
+# Initialize the Firestore client
 db = firestore.client()
 
 # --- 2. Page Setup ---
@@ -52,7 +59,7 @@ if role == "Teacher":
 
     if audio_data:
         try:
-            # Process Audio Data
+            # Process Audio Data using pydub
             audio_segment = pydub.AudioSegment.from_file(io.BytesIO(audio_data['bytes']))
             wav_io = io.BytesIO()
             audio_segment.export(wav_io, format="wav")
@@ -60,14 +67,14 @@ if role == "Teacher":
 
             with sr.AudioFile(wav_io) as source:
                 audio = recognizer.record(source)
-                # Speech to Text conversion
+                # Convert Speech to Text using Google Speech Recognition
                 original_text = recognizer.recognize_google(audio, language=languages[fdp_lang]["speech"])
 
-                # Translate to Student's preferred language
+                # Translate the text to the Student's preferred language
                 translated_res = translator.translate(original_text, dest=languages[std_lang]["trans"])
                 translated_text = translated_res.text
 
-                # Update Cloud Database (Firebase Firestore)
+                # Update the Firebase Cloud Database (Firestore)
                 db.collection("classroom").document("live_lecture").set({
                     "original": original_text,
                     "translated": translated_text,
@@ -86,18 +93,18 @@ else:
     st.subheader("Student Dashboard (Live Output)")
     st.warning("Listening for teacher's live updates...")
 
-    # Fetch latest data from Firestore
+    # Fetch the latest translated text from Firestore
     doc_ref = db.collection("classroom").document("live_lecture")
     doc = doc_ref.get()
 
     if doc.exists:
         data = doc.to_dict()
-        # Visual output for the student
+        # Display the live translation to the student
         st.markdown(f"### 📖 Live Translation ({std_lang}):")
         st.write(data.get('translated', 'No text found.'))
     else:
         st.info("The teacher hasn't started the lecture yet.")
 
-    # Refresh button to fetch latest updates from Cloud
+    # Refresh button to sync with the teacher's latest updates
     if st.button("🔄 Sync with Teacher"):
         st.rerun()
