@@ -7,14 +7,18 @@ import pydub
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. Firebase Configuration ---
-# Ensure your 'serviceAccountKey.json' is in the same folder as this script
+# --- 1. Firebase Configuration using Streamlit Secrets ---
+# We are now using the data from the Secrets tab instead of a local file.
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate('serviceAccountKey.json')
+        # Fetching the secret key dictionary from Streamlit settings
+        # Ensure you have [firebase_key] set up in your Streamlit Cloud Secrets!
+        key_dict = dict(st.secrets["firebase_key"])
+        cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error("Firebase Key Error: Make sure serviceAccountKey.json is present.")
+        st.error(f"Firebase Connection Error: {e}")
+        st.info("Check your Streamlit Cloud Secrets tab for the [firebase_key] configuration.")
 
 db = firestore.client()
 
