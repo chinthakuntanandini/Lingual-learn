@@ -1,7 +1,7 @@
 streamlit
-firebase-admin
-SpeechRecognition
-googletrans==4.0.0-rc1
 streamlit-mic-recorder
+SpeechRecognition
+deep-translator
 pydub
-PyPDF2
+firebase-admin
+fpdf
