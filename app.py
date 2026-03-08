@@ -7,59 +7,60 @@ import pydub
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. Firebase Configuration using Streamlit Secrets ---
-# We are using st.secrets to securely load the Firebase credentials.
+# --- 1. Firebase Initialization ---
+# We check if the app is already initialized to avoid errors on refresh
 if not firebase_admin._apps:
     try:
-        # Load the [firebase_key] section from Streamlit Cloud Secrets
+        # Load credentials from Streamlit Cloud Secrets (stored in the dashboard)
         secret_info = st.secrets["firebase_key"]
-        
-        # Convert the secret to a dictionary and fix the private_key formatting
-        # This replaces literal '\n' characters to ensure the JWT signature is valid.
         key_dict = dict(secret_info)
-        if "private_key" in key_dict:
-            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
         
+        # Format the private key correctly by handling newline characters
+        if "private_key" in key_dict:
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n").strip()
+        
+        # Use the credentials to initialize the Firebase Admin SDK
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
+        # Display an error message if the connection fails
         st.error(f"Firebase Connection Error: {e}")
-        st.info("Please verify your [firebase_key] in the Streamlit Secrets tab.")
 
-# Initialize the Firestore client
+# Create a Firestore client to interact with the database
 db = firestore.client()
 
-# --- 2. Page Setup ---
+# --- 2. Page Configuration ---
 st.set_page_config(page_title="LinguaLearn AI", layout="wide")
 st.title("LinguaLearn: AI Inclusive Classroom 🎓")
 
-# Language codes for Speech Recognition and Translation
+# Define supported languages and their respective speech/translation codes
 languages = {
     "English": {"speech": "en-US", "trans": "en"},
     "Telugu": {"speech": "te-IN", "trans": "te"},
     "Urdu": {"speech": "ur-PK", "trans": "ur"}
 }
 
-# --- 3. Sidebar Configuration ---
+# --- 3. Sidebar Menu ---
 st.sidebar.header("Classroom Settings")
+# Select if the user is a Teacher or a Student
 role = st.sidebar.selectbox("Select Role:", ["Teacher", "Student"])
+# Select source and target languages
 fdp_lang = st.sidebar.selectbox("Teacher Language:", list(languages.keys()))
 std_lang = st.sidebar.selectbox("Student Language:", list(languages.keys()))
 
+# Initialize translation and speech recognition objects
 translator = Translator()
 recognizer = sr.Recognizer()
 
-# --- 4. Teacher Interface ---
+# --- 4. Teacher Dashboard (Data Input) ---
 if role == "Teacher":
-    st.subheader("Teacher Dashboard (Source Input)")
-    st.info(f"Broadcast Mode: Recording in {fdp_lang}")
-
-    # Recording Component
+    st.subheader("Teacher Dashboard (Broadcast Mode)")
+    # Component to record audio directly from the browser microphone
     audio_data = mic_recorder(start_prompt="🎤 Start Class", stop_prompt="🛑 Stop Class", key='live_mic')
 
     if audio_data:
         try:
-            # Process Audio Data using pydub
+            # Convert the recorded audio bytes into a WAV format using pydub
             audio_segment = pydub.AudioSegment.from_file(io.BytesIO(audio_data['bytes']))
             wav_io = io.BytesIO()
             audio_segment.export(wav_io, format="wav")
@@ -67,44 +68,29 @@ if role == "Teacher":
 
             with sr.AudioFile(wav_io) as source:
                 audio = recognizer.record(source)
-                # Convert Speech to Text using Google Speech Recognition
+                # Step A: Convert Speech to Text (STT)
                 original_text = recognizer.recognize_google(audio, language=languages[fdp_lang]["speech"])
-
-                # Translate the text to the Student's preferred language
+                
+                # Step B: Translate the Text to the selected student language
                 translated_res = translator.translate(original_text, dest=languages[std_lang]["trans"])
                 translated_text = translated_res.text
 
-                # Update the Firebase Cloud Database (Firestore)
+                # Step C: Upload results to Firebase Firestore
                 db.collection("classroom").document("live_lecture").set({
                     "original": original_text,
                     "translated": translated_text,
                     "target_lang": std_lang,
-                    "is_active": True
+                    "timestamp": firestore.SERVER_TIMESTAMP
                 })
 
-                st.success(f"Original: {original_text}")
+                # Show success messages to the teacher
+                st.success(f"Captured: {original_text}")
                 st.success(f"Translated & Sent: {translated_text}")
-
         except Exception as e:
             st.error(f"Processing Error: {e}")
 
-# --- 5. Student Interface ---
+# --- 5. Student Dashboard (Data Output) ---
 else:
-    st.subheader("Student Dashboard (Live Output)")
-    st.warning("Listening for teacher's live updates...")
-
-    # Fetch the latest translated text from Firestore
-    doc_ref = db.collection("classroom").document("live_lecture")
-    doc = doc_ref.get()
-
-    if doc.exists:
-        data = doc.to_dict()
-        # Display the live translation to the student
-        st.markdown(f"### 📖 Live Translation ({std_lang}):")
-        st.write(data.get('translated', 'No text found.'))
-    else:
-        st.info("The teacher hasn't started the lecture yet.")
-
-    # Refresh button to sync with the teacher's latest updates
-    if st.button("🔄 Sync with Teacher"):
-        st.rerun()
+    st.subheader("Student Dashboard (Live Learning)")
+    # Fetch the latest lecture data from Firestore
+    doc_ref = db.collection("classroom").document("live_lecture
