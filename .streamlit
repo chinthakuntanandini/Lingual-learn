@@ -1,4 +1,4 @@
-[firebase_key]
+[firebase]
 type = "service_account"
 project_id = "lingualearn-live-final"
 private_key_id = "f516a250ca8d5c3a90dc34b317811e79f249c333"
