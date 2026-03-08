@@ -12,8 +12,7 @@ from fpdf import FPDF
 if not firebase_admin._apps:
     try:
         # Fetch the secret dictionary from Streamlit
-        key_dict = dict(st.secrets["firebase_key"])
-        
+       key_dict = dict(st.secrets["firebase"])
         # CLEANUP LOGIC: This fixes the "Unable to load PEM file" error
         # It ensures that \n characters are treated as real newlines
         if "private_key" in key_dict:
@@ -133,3 +132,4 @@ else:
     # Manual refresh button to trigger a rerun and fetch new data
     if st.button("🔄 Sync with Teacher"):
         st.rerun()
+
