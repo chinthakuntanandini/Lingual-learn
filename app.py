@@ -29,12 +29,12 @@ user_role = st.sidebar.radio("Select Your Role:", ["Teacher", "Student"])
 
 if user_role == "Teacher":
     st.header("👨‍🏫 Teacher Dashboard")
-    st.write("Record your English lecture. It will be shared with all students.")
+    st.write("Record your English lecture below.")
 
     audio_value = st.audio_input("Record your English lecture")
 
     if audio_value:
-        st.info("Processing... Please wait.")
+        st.info("Processing your speech... Please wait.")
         try:
             audio_bytes = audio_value.read()
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
@@ -46,11 +46,12 @@ if user_role == "Teacher":
                 audio_data = recognizer.record(source)
                 english_text = recognizer.recognize_google(audio_data)
                 
+                # Save to shared storage
                 shared_storage["english_text"] = english_text
                 
                 st.subheader("🇺🇸 Your Speech (English)")
                 st.success(english_text)
-                st.info("✅ Shared with students.")
+                st.info("✅ Shared with all students.")
 
         except Exception as e:
             st.error(f"Error: {e}")
@@ -78,30 +79,37 @@ else:
             st.subheader(f"🇮🇳 {student_lang}")
             st.success(translated_text)
             
-            # --- VOICE (TEXT TO SPEECH) ---
-            st.write("🔊 Listen to the translation:")
+            # --- VOICE OUTPUT (TTS) ---
+            st.write("🔊 Listen to Translation:")
             try:
                 tts = gTTS(text=translated_text, lang=dest_code)
                 tts_io = io.BytesIO()
                 tts.write_to_fp(tts_io)
                 st.audio(tts_io, format="audio/mp3")
             except Exception as tts_err:
-                st.error("Could not generate voice audio.")
+                st.warning("Voice could not be generated.")
             
         # PDF Option
         try:
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            pdf.cell(200, 10, txt="Lecture Notes", ln=True, align='C')
-            pdf.multi_cell(0, 10, txt=f"English: {english_content}")
-            st.download_button(label="📥 Download PDF", data=bytes(pdf.output()), file_name="notes.pdf")
+            pdf.cell(200, 10, txt="Class Lecture Notes", ln=True, align='C')
+            pdf.ln(10)
+            pdf.multi_cell(0, 10, txt=f"Original: {english_content}")
+            
+            st.download_button(
+                label="📥 Download PDF", 
+                data=bytes(pdf.output()), 
+                file_name="lecture.pdf",
+                mime="application/pdf"
+            )
         except:
             pass
         
     else:
         st.warning("Waiting for the teacher to record...")
-        if st.button("🔄 Refresh"):
+        if st.button("🔄 Refresh for Notes"):
             st.rerun()
 
 st.divider()
