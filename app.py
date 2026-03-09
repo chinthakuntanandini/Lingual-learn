@@ -88,26 +88,32 @@ else:
             except Exception as tts_err:
                 st.warning("Voice could not be generated.")
             
-        # --- PDF GENERATION (MULTILINGUAL FIX) ---
+        # --- PDF GENERATION (ERROR FIX) ---
         try:
             pdf = FPDF()
             pdf.add_page()
-            
-            # Standard font for title
-            pdf.set_font("Helvetica", size=16)
+            pdf.set_font("Helvetica", size=14)
             pdf.cell(200, 10, txt="Class Lecture Notes", ln=True, align='C')
             pdf.ln(10)
             
-            # Content
+            # English text printing
             pdf.set_font("Helvetica", size=12)
-            pdf.multi_cell(0, 10, txt=f"English: {english_content}")
-            pdf.ln(5)
+            pdf.multi_cell(0, 10, txt=f"Original (English): {english_content}")
+            pdf.ln(10)
             
-            # Note: For full Unicode (Urdu/Telugu) in PDF, fpdf2 requires a .ttf font file.
-            # To keep it simple for now, we'll output the translation as text.
-            # If the symbols appear as ???, you'll need to upload a font file like 'NotoSans-Regular.ttf'
-            pdf.multi_cell(0, 10, txt=f"Translation ({student_lang}): {translated_text}")
+            # Translation section
+            pdf.cell(0, 10, txt=f"Translation Language: {student_lang}", ln=True)
             
+            # ERROR PREVENTION: 
+            # FPDF standard fonts don't support Urdu/Telugu characters directly.
+            # To avoid app crash, we encode to latin-1 and ignore bad characters.
+            safe_translation = translated_text.encode('latin-1', 'ignore').decode('latin-1')
+            pdf.multi_cell(0, 10, txt=f"Translated Text: {safe_translation}")
+            
+            if not safe_translation.strip():
+                pdf.set_text_color(255, 0, 0)
+                pdf.write(10, "(Note: Regional font characters not supported in basic PDF. Please copy from screen.)")
+
             st.download_button(
                 label=f"📥 Download {student_lang} PDF", 
                 data=pdf.output(), 
@@ -115,7 +121,7 @@ else:
                 mime="application/pdf"
             )
         except Exception as pdf_error:
-            st.error(f"PDF Error: {pdf_error}")
+            st.warning("PDF could not be created with regional characters. Please use the on-screen text.")
         
     else:
         st.warning("Waiting for the teacher to record...")
