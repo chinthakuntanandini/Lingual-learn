@@ -55,25 +55,27 @@ if user_role == "Teacher":
                     st.subheader(f"🇮🇳 {target_lang}")
                     st.info(translated_text)
 
-                # --- PDF GENERATION (SIMPLE VERSION) ---
+                # --- PDF GENERATION (FIXED) ---
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", size=12)
                 pdf.cell(200, 10, txt="Classroom Lecture Notes", ln=True, align='C')
                 pdf.ln(10)
                 
-                # Adding content to PDF
+                # Adding English content
                 pdf.multi_cell(0, 10, txt=f"English: {english_text}")
                 pdf.ln(5)
-                # Note: Standard PDF fonts don't support Telugu. 
-                # This will save the English part clearly.
-                pdf.multi_cell(0, 10, txt=f"Translated Content: {translated_text.encode('latin-1', 'replace').decode('latin-1')}")
                 
-                pdf_data = pdf.output(dest='S').encode('latin-1')
+                # Adding Translated content (handled to avoid encoding error)
+                safe_translated = translated_text.encode('utf-8', 'ignore').decode('latin-1', 'replace')
+                pdf.multi_cell(0, 10, txt=f"Translated Notes: {safe_translated}")
+                
+                # Correct way to get PDF bytes in Streamlit
+                pdf_output = pdf.output(dest='S')
                 
                 st.download_button(
                     label="📥 Download PDF Notes",
-                    data=pdf_data,
+                    data=pdf_output,
                     file_name="lecture_notes.pdf",
                     mime="application/pdf"
                 )
