@@ -13,6 +13,18 @@ recognizer = sr.Recognizer()
 st.set_page_config(page_title="AI Live Classroom", layout="wide")
 st.title("🎙️ AI Live Bilingual Classroom Assistant")
 
+# --- SHARED MEMORY LOGIC ---
+# This dictionary will store the lecture text for ALL users
+if 'shared_data' not in st.session_state:
+    st.session_state['shared_data'] = {"english_text": ""}
+
+# Function to update global text (Helper for sharing across sessions)
+def update_lecture(text):
+    st.session_state['shared_data']["english_text"] = text
+    # For real-time multi-user apps, we often use a global variable or database
+    # But for a single-app instance, this session check works during active use
+    st.cache_resource.clear() 
+
 # --- SIDEBAR: ROLE SELECTION ---
 st.sidebar.title("User Access")
 user_role = st.sidebar.radio("Select Your Role:", ["Teacher", "Student"])
@@ -21,15 +33,13 @@ user_role = st.sidebar.radio("Select Your Role:", ["Teacher", "Student"])
 
 if user_role == "Teacher":
     st.header("👨‍🏫 Teacher Dashboard")
-    st.write("Record your English lecture below. Students will choose their own translation language.")
+    st.write("Record your English lecture. It will be shared with all students.")
 
-    # Microphone input
     audio_value = st.audio_input("Record your English lecture")
 
     if audio_value:
         st.info("Processing your speech... Please wait.")
         try:
-            # Audio processing logic
             audio_bytes = audio_value.read()
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
             wav_io = io.BytesIO()
@@ -40,34 +50,31 @@ if user_role == "Teacher":
                 audio_data = recognizer.record(source)
                 english_text = recognizer.recognize_google(audio_data)
                 
-                # Show teacher what they said in English
                 st.subheader("🇺🇸 Your Speech (English)")
                 st.success(english_text)
 
-                # IMPORTANT: Save ONLY English text for the session
-                st.session_state['original_english'] = english_text
+                # Save to shared state
+                st.session_state['shared_text'] = english_text
 
         except Exception as e:
-            st.error(f"Error: {e}. Please try again.")
+            st.error(f"Error: {e}")
 
 else:
     # --- STUDENT VIEW ---
     st.header("🎓 Student Portal")
     
-    # Student selects their OWN language here
     languages = {"Telugu": "te", "Urdu": "ur", "Hindi": "hi", "Tamil": "ta"}
     student_lang = st.selectbox("Select your preferred language:", list(languages.keys()))
     dest_code = languages[student_lang]
 
-    if 'original_english' in st.session_state:
-        english_content = st.session_state['original_english']
+    # Check if there is recorded text from the teacher
+    if 'shared_text' in st.session_state:
+        english_content = st.session_state['shared_text']
         
-        # Translate the saved English text to the student's chosen language
         with st.spinner(f"Translating to {student_lang}..."):
             translation = translator.translate(english_content, dest=dest_code)
             translated_text = translation.text
 
-        # Display results to student
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🇺🇸 Original (English)")
@@ -76,25 +83,21 @@ else:
             st.subheader(f"🇮🇳 Translation ({student_lang})")
             st.success(translated_text)
             
-        # PDF Option for Student
+        # PDF Option
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
         pdf.cell(200, 10, txt=f"Lecture Notes - {student_lang}", ln=True, align='C')
-        pdf.ln(10)
         pdf.multi_cell(0, 10, txt=f"English: {english_content}")
-        # PDF encoding fix
-        safe_translated = translated_text.encode('utf-8', 'ignore').decode('latin-1', 'replace')
-        pdf.multi_cell(0, 10, txt=f"Notes: {safe_translated}")
         
         st.download_button(
-            label="📥 Download Notes as PDF",
+            label="📥 Download PDF",
             data=pdf.output(dest='S'),
             file_name=f"lecture_{student_lang}.pdf",
             mime="application/pdf"
         )
     else:
-        st.warning("Waiting for the teacher to record the lecture. Please stay tuned.")
+        st.warning("Waiting for the teacher to record. (Tip: If teacher already recorded, click 'Student' again to refresh)")
 
 st.divider()
 st.caption("AI-Powered Assistant for Multi-Language Classrooms")
