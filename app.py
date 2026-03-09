@@ -3,6 +3,7 @@ import speech_recognition as sr
 from googletrans import Translator
 from fpdf import FPDF
 from pydub import AudioSegment
+from gtts import gTTS
 import io
 
 # --- INITIALIZE ---
@@ -28,7 +29,7 @@ user_role = st.sidebar.radio("Select Your Role:", ["Teacher", "Student"])
 
 if user_role == "Teacher":
     st.header("👨‍🏫 Teacher Dashboard")
-    st.write("Record your English lecture. It will be shared with all students globally.")
+    st.write("Record your English lecture. It will be shared with all students.")
 
     audio_value = st.audio_input("Record your English lecture")
 
@@ -49,7 +50,7 @@ if user_role == "Teacher":
                 
                 st.subheader("🇺🇸 Your Speech (English)")
                 st.success(english_text)
-                st.info("✅ This text is now visible to all students.")
+                st.info("✅ Shared with students.")
 
         except Exception as e:
             st.error(f"Error: {e}")
@@ -60,7 +61,7 @@ else:
     
     languages = {"Telugu": "te", "Urdu": "ur", "Hindi": "hi", "Tamil": "ta"}
     student_lang = st.selectbox("Select your language:", list(languages.keys()))
-    dest_code = languages[target_lang] if 'target_lang' in locals() else languages[student_lang]
+    dest_code = languages[student_lang]
 
     english_content = shared_storage["english_text"]
 
@@ -77,33 +78,30 @@ else:
             st.subheader(f"🇮🇳 {student_lang}")
             st.success(translated_text)
             
-        # PDF Export Logic - FIXED VERSION
+            # --- VOICE (TEXT TO SPEECH) ---
+            st.write("🔊 Listen to the translation:")
+            try:
+                tts = gTTS(text=translated_text, lang=dest_code)
+                tts_io = io.BytesIO()
+                tts.write_to_fp(tts_io)
+                st.audio(tts_io, format="audio/mp3")
+            except Exception as tts_err:
+                st.error("Could not generate voice audio.")
+            
+        # PDF Option
         try:
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            pdf.cell(200, 10, txt=f"Lecture Notes", ln=True, align='C')
-            pdf.ln(10)
-            
-            # Use a safe string for the PDF to avoid encoding issues
+            pdf.cell(200, 10, txt="Lecture Notes", ln=True, align='C')
             pdf.multi_cell(0, 10, txt=f"English: {english_content}")
-            
-            # Getting PDF output as bytes safely
-            pdf_output = pdf.output()
-            
-            # If the output is already bytes/bytearray, we use it directly
-            st.download_button(
-                label="📥 Download PDF", 
-                data=bytes(pdf_output), 
-                file_name="lecture_notes.pdf",
-                mime="application/pdf"
-            )
-        except Exception as pdf_err:
-            st.warning(f"PDF creation failed: {pdf_err}. You can still copy the text above.")
+            st.download_button(label="📥 Download PDF", data=bytes(pdf.output()), file_name="notes.pdf")
+        except:
+            pass
         
     else:
         st.warning("Waiting for the teacher to record...")
-        if st.button("🔄 Refresh for New Notes"):
+        if st.button("🔄 Refresh"):
             st.rerun()
 
 st.divider()
