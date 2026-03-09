@@ -1,126 +1,84 @@
 import streamlit as st
-from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
-from deep_translator import GoogleTranslator
-import io
-import pydub
-import firebase_admin
-from firebase_admin import credentials, firestore
+from googletrans import Translator
 from fpdf import FPDF
+import os
 
-# --- 1. Firebase Initialization ---
-if not firebase_admin._apps:
-    try:
-        key_dict = dict(st.secrets["firebase"])
-        if "private_key" in key_dict:
-            cleaned_key = key_dict["private_key"].replace("\\n", "\n")
-            if "-----BEGIN PRIVATE KEY-----" not in cleaned_key:
-                cleaned_key = "-----BEGIN PRIVATE KEY-----\n" + cleaned_key
-            if "-----END PRIVATE KEY-----" not in cleaned_key:
-                cleaned_key = cleaned_key + "\n-----END PRIVATE KEY-----"
-            key_dict["private_key"] = cleaned_key
-
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-    except Exception as e:
-        st.error(f"Firebase Connection Error: {e}")
-
-try:
-    db = firestore.client()
-except Exception as e:
-    st.error("Database connection failed.")
-
-# --- 2. Multi-language PDF Generator ---
-class PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'LinguaLearn AI Lecture Notes', 0, 1, 'C')
-        self.ln(5)
-
-# --- 3. UI Setup ---
-st.set_page_config(page_title="LinguaLearn AI", layout="wide")
-st.title("LinguaLearn: AI Inclusive Classroom 🎓")
-
-languages = {
-    "English": {"code": "en", "speech": "en-US"},
-    "Telugu": {"code": "te", "speech": "te-IN"},
-    "Urdu": {"code": "ur", "speech": "ur-PK"}
-}
-
-# --- 4. Sidebar Configuration ---
-st.sidebar.header("Classroom Control")
-role = st.sidebar.selectbox("User Role:", ["Teacher", "Student"])
+# --- INITIALIZE ---
+translator = Translator()
 recognizer = sr.Recognizer()
 
-# --- 5. Teacher Interface ---
-if role == "Teacher":
-    st.subheader("👨‍🏫 Teacher Dashboard")
-    st.info("The teacher speaks in English. Students can choose their own language.")
-    
-    audio_data = mic_recorder(start_prompt="🎤 Start Recording", stop_prompt="🛑 Stop & Broadcast", key='teacher_mic')
+# Application Interface
+st.set_page_config(page_title="AI Bilingual Classroom", layout="wide")
+st.title("🎙️ AI Bilingual Classroom Assistant")
+st.write("Real-time English to Bilingual Speech Translation")
 
-    if audio_data:
+# --- SIDEBAR ---
+languages = {"Telugu": "te", "Urdu": "ur", "Hindi": "hi"}
+target_lang = st.sidebar.selectbox("Select Student Language", list(languages.keys()))
+dest_code = languages[target_lang]
+
+# --- MAIN LOGIC ---
+if st.button("🔴 Start Recording"):
+    with sr.Microphone() as source:
+        st.info("Listening... Please speak in English.")
+        # Calibration for background noise
+        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        
         try:
-            audio_segment = pydub.AudioSegment.from_file(io.BytesIO(audio_data['bytes']))
-            wav_io = io.BytesIO()
-            audio_segment.export(wav_io, format="wav")
-            wav_io.seek(0)
+            # 1. Capture English Speech
+            audio_data = recognizer.listen(source, timeout=5)
+            english_text = recognizer.recognize_google(audio_data)
+            
+            # 2. AI Translation
+            translation = translator.translate(english_text, dest=dest_code)
+            translated_text = translation.text
 
-            with sr.AudioFile(wav_io) as source:
-                audio = recognizer.record(source)
-                original_text = recognizer.recognize_google(audio, language="en-US")
+            # Display on Screen
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("English (Original)")
+                st.success(english_text)
+            with col2:
+                st.subheader(f"{target_lang} (Translated)")
+                st.info(translated_text)
+
+            # --- 3. BILINGUAL PDF GENERATION ---
+            pdf = FPDF()
+            pdf.add_page()
+            
+            # FreeSans.ttf is required for Telugu/Urdu character support
+            font_path = "FreeSans.ttf"
+            
+            if os.path.exists(font_path):
+                # NOTE: 'uni=True' is removed as it's not needed in latest fpdf2
+                pdf.add_font("FreeSans", "", font_path)
+                pdf.set_font("FreeSans", size=14)
                 
-                db.collection("classroom").document("live_lecture").set({
-                    "original_text": original_text,
-                    "timestamp": firestore.SERVER_TIMESTAMP
-                })
-                st.success(f"Broadcasted (English): {original_text}")
+                # Header
+                pdf.cell(200, 10, txt="Classroom Lecture Notes", align='C', new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(10)
+                
+                # Bilingual content
+                pdf.multi_cell(0, 10, txt=f"English: {english_text}")
+                pdf.ln(5)
+                pdf.multi_cell(0, 10, txt=f"{target_lang}: {translated_text}")
+                
+                # Generate PDF binary data directly to memory
+                pdf_output = pdf.output()
+                
+                # 4. DOWNLOAD BUTTON
+                st.download_button(
+                    label=f"📥 Download {target_lang} PDF",
+                    data=bytes(pdf_output),
+                    file_name="Bilingual_Notes.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.error("Error: 'FreeSans.ttf' font file not found in the project folder.")
+
         except Exception as e:
             st.error(f"Processing Error: {e}")
 
-# --- 6. Student Interface ---
-else:
-    st.subheader("🎓 Student Dashboard")
-    student_needs = st.selectbox("Select your Preferred Language:", list(languages.keys()))
-
-    doc_ref = db.collection("classroom").document("live_lecture")
-    doc = doc_ref.get()
-
-    if doc.exists:
-        data = doc.to_dict()
-        raw_text = data.get('original_text', '')
-
-        if raw_text:
-            # Translation
-            translated_text = GoogleTranslator(source='auto', target=languages[student_needs]["code"]).translate(raw_text)
-
-            st.markdown(f"### 📖 Translated Lecture ({student_needs}):")
-            st.info(translated_text)
-            
-            with st.expander("Show Original English"):
-                st.write(raw_text)
-
-            # PDF Generation with BOTH English and Translated Text
-            if st.button("📄 Generate Bilingual PDF"):
-                pdf = PDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                
-                # Adding English Version
-                pdf.set_text_color(0, 0, 255) # Blue for English
-                pdf.multi_cell(0, 10, txt=f"English: {raw_text}")
-                pdf.ln(5)
-                
-                # Adding Translated Version
-                pdf.set_text_color(0, 128, 0) # Green for Translation
-                # Note: FPDF requires custom fonts for Telugu/Urdu glyphs. 
-                # This prints the string; if fonts are missing, it uses 'ignore' logic.
-                pdf.multi_cell(0, 10, txt=f"{student_needs}: {translated_text}".encode('latin-1', 'ignore').decode('latin-1'))
-                
-                pdf_output = pdf.output(dest='S').encode('latin-1', 'ignore')
-                st.download_button(label="📥 Download PDF", data=pdf_output, file_name="bilingual_lecture.pdf", mime="application/pdf")
-    else:
-        st.warning("Waiting for the teacher...")
-
-    if st.button("🔄 Sync Class"):
-        st.rerun()
+st.divider()
+st.caption("AI-Powered Assistant for Inclusive Learning")
