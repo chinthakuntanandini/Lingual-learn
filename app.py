@@ -46,7 +46,6 @@ if user_role == "Teacher":
                 audio_data = recognizer.record(source)
                 english_text = recognizer.recognize_google(audio_data)
                 
-                # Save to shared storage
                 shared_storage["english_text"] = english_text
                 
                 st.subheader("🇺🇸 Your Speech (English)")
@@ -89,23 +88,34 @@ else:
             except Exception as tts_err:
                 st.warning("Voice could not be generated.")
             
-        # PDF Option
+        # --- PDF GENERATION (MULTILINGUAL FIX) ---
         try:
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Arial", size=12)
+            
+            # Standard font for title
+            pdf.set_font("Helvetica", size=16)
             pdf.cell(200, 10, txt="Class Lecture Notes", ln=True, align='C')
             pdf.ln(10)
-            pdf.multi_cell(0, 10, txt=f"Original: {english_content}")
+            
+            # Content
+            pdf.set_font("Helvetica", size=12)
+            pdf.multi_cell(0, 10, txt=f"English: {english_content}")
+            pdf.ln(5)
+            
+            # Note: For full Unicode (Urdu/Telugu) in PDF, fpdf2 requires a .ttf font file.
+            # To keep it simple for now, we'll output the translation as text.
+            # If the symbols appear as ???, you'll need to upload a font file like 'NotoSans-Regular.ttf'
+            pdf.multi_cell(0, 10, txt=f"Translation ({student_lang}): {translated_text}")
             
             st.download_button(
-                label="📥 Download PDF", 
-                data=bytes(pdf.output()), 
-                file_name="lecture.pdf",
+                label=f"📥 Download {student_lang} PDF", 
+                data=pdf.output(), 
+                file_name=f"lecture_{student_lang}.pdf",
                 mime="application/pdf"
             )
-        except:
-            pass
+        except Exception as pdf_error:
+            st.error(f"PDF Error: {pdf_error}")
         
     else:
         st.warning("Waiting for the teacher to record...")
