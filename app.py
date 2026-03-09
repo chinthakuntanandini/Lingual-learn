@@ -26,15 +26,13 @@ dest_code = languages[target_lang]
 
 if user_role == "Teacher":
     st.header("👨‍🏫 Teacher Dashboard")
-    st.write("Click the microphone button below to start recording your lecture.")
+    st.write("Click the microphone button to record.")
 
-    # LIVE AUDIO INPUT: Enables browser microphone
     audio_value = st.audio_input("Record your English lecture")
 
     if audio_value:
         st.info("Processing audio... Please wait.")
         try:
-            # Convert recording to WAV format using Pydub
             audio_bytes = audio_value.read()
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
             
@@ -44,40 +42,47 @@ if user_role == "Teacher":
 
             with sr.AudioFile(wav_io) as source:
                 audio_data = recognizer.record(source)
-                # Speech to Text conversion
                 english_text = recognizer.recognize_google(audio_data)
                 
-                # AI Translation to target language
                 translation = translator.translate(english_text, dest=dest_code)
                 translated_text = translation.text
 
-                # Display Results in columns
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.subheader("🇺🇸 English (Original)")
+                    st.subheader("🇺🇸 English")
                     st.success(english_text)
                 with col2:
-                    st.subheader(f"🇮🇳 {target_lang} (Translated)")
+                    st.subheader(f"🇮🇳 {target_lang}")
                     st.info(translated_text)
 
-                # Store data in Session State for Student View
-                st.session_state['last_lecture'] = {
-                    'text': translated_text,
-                    'lang': target_lang
-                }
+                # --- PDF GENERATION (SIMPLE VERSION) ---
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
+                pdf.cell(200, 10, txt="Classroom Lecture Notes", ln=True, align='C')
+                pdf.ln(10)
+                
+                # Adding content to PDF
+                pdf.multi_cell(0, 10, txt=f"English: {english_text}")
+                pdf.ln(5)
+                # Note: Standard PDF fonts don't support Telugu. 
+                # This will save the English part clearly.
+                pdf.multi_cell(0, 10, txt=f"Translated Content: {translated_text.encode('latin-1', 'replace').decode('latin-1')}")
+                
+                pdf_data = pdf.output(dest='S').encode('latin-1')
+                
+                st.download_button(
+                    label="📥 Download PDF Notes",
+                    data=pdf_data,
+                    file_name="lecture_notes.pdf",
+                    mime="application/pdf"
+                )
+
+                st.session_state['last_lecture'] = {'text': translated_text, 'lang': target_lang}
 
         except Exception as e:
-            st.error(f"Error: {e}. Please speak clearly and try again.")
-
+            st.error(f"Error: {e}")
 else:
-    # --- STUDENT VIEW ---
     st.header(f"🎓 Student Portal ({target_lang})")
     if 'last_lecture' in st.session_state:
-        lecture = st.session_state['last_lecture']
-        st.write(f"### Latest notes from teacher ({lecture['lang']}):")
-        st.success(lecture['text'])
-    else:
-        st.warning("Waiting for the teacher to start the lecture...")
-
-st.divider()
-st.caption("AI-Powered Assistant for Inclusive Learning")
+        st.success(st.session_state['last_lecture']['text'])
