@@ -14,7 +14,6 @@ st.set_page_config(page_title="AI Live Classroom", layout="wide")
 st.title("🎙️ AI Live Bilingual Classroom Assistant")
 
 # --- GLOBAL DATA SHARING ---
-# This ensures that text recorded by the teacher is shared with all student sessions
 @st.cache_resource
 def get_shared_data():
     return {"english_text": ""}
@@ -31,13 +30,11 @@ if user_role == "Teacher":
     st.header("👨‍🏫 Teacher Dashboard")
     st.write("Record your English lecture. It will be shared with all students globally.")
 
-    # Audio input for live recording
     audio_value = st.audio_input("Record your English lecture")
 
     if audio_value:
         st.info("Processing... Please wait.")
         try:
-            # Converting recorded audio to WAV for recognition
             audio_bytes = audio_value.read()
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
             wav_io = io.BytesIO()
@@ -48,7 +45,6 @@ if user_role == "Teacher":
                 audio_data = recognizer.record(source)
                 english_text = recognizer.recognize_google(audio_data)
                 
-                # Saving the recognized text to shared server memory
                 shared_storage["english_text"] = english_text
                 
                 st.subheader("🇺🇸 Your Speech (English)")
@@ -62,12 +58,10 @@ else:
     # --- STUDENT VIEW ---
     st.header("🎓 Student Portal")
     
-    # Students select their preferred language for translation
     languages = {"Telugu": "te", "Urdu": "ur", "Hindi": "hi", "Tamil": "ta"}
     student_lang = st.selectbox("Select your language:", list(languages.keys()))
-    dest_code = languages[student_lang]
+    dest_code = languages[target_lang] if 'target_lang' in locals() else languages[student_lang]
 
-    # Retrieving recorded text from shared memory
     english_content = shared_storage["english_text"]
 
     if english_content:
@@ -83,25 +77,32 @@ else:
             st.subheader(f"🇮🇳 {student_lang}")
             st.success(translated_text)
             
-        # PDF Export Logic
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt=f"Lecture Notes - {student_lang}", ln=True, align='C')
-        pdf.multi_cell(0, 10, txt=f"English Content: {english_content}")
-        
-        # Binary PDF output for Streamlit download button
-        pdf_data = pdf.output(dest='S').encode('latin-1', 'ignore')
-        
-        st.download_button(
-            label="📥 Download PDF", 
-            data=pdf_data, 
-            file_name="lecture_notes.pdf",
-            mime="application/pdf"
-        )
+        # PDF Export Logic - FIXED VERSION
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(200, 10, txt=f"Lecture Notes", ln=True, align='C')
+            pdf.ln(10)
+            
+            # Use a safe string for the PDF to avoid encoding issues
+            pdf.multi_cell(0, 10, txt=f"English: {english_content}")
+            
+            # Getting PDF output as bytes safely
+            pdf_output = pdf.output()
+            
+            # If the output is already bytes/bytearray, we use it directly
+            st.download_button(
+                label="📥 Download PDF", 
+                data=bytes(pdf_output), 
+                file_name="lecture_notes.pdf",
+                mime="application/pdf"
+            )
+        except Exception as pdf_err:
+            st.warning(f"PDF creation failed: {pdf_err}. You can still copy the text above.")
         
     else:
-        st.warning("Waiting for the teacher to record... If the teacher already finished, please refresh.")
+        st.warning("Waiting for the teacher to record...")
         if st.button("🔄 Refresh for New Notes"):
             st.rerun()
 
