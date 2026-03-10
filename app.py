@@ -2,62 +2,58 @@ import streamlit as st
 import ml_logic
 import time
 
-# Page setup for a professional classroom look
-st.set_page_config(page_title="LinguaLearn AI", layout="wide")
+# Page Configuration
+st.set_page_config(page_title="LinguaLearn AI Classroom", layout="wide")
 
-# Custom CSS for a better UI
+# Custom CSS for Teacher and Student UI Styling
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stTextArea textarea { font-size: 18px !important; }
+    .teacher-box { background-color: #e3f2fd; padding: 20px; border-radius: 15px; border-left: 5px solid #1976d2; }
+    .student-box { background-color: #f1f8e9; padding: 20px; border-radius: 15px; border-left: 5px solid #388e3c; }
+    .stButton>button { width: 100%; background-color: #1976d2; color: white; }
     </style>
-    """, unsafe_status=True)
+    """, unsafe_allow_html=True)
 
-st.title("👨‍🏫 AI-Powered Interactive Classroom")
-st.markdown("---")
+st.title("🎓 LinguaLearn AI Classroom")
+st.write("Real-time Teacher-Student Interaction Hub")
 
-# Layout: Creating two columns for Teacher and Student view
-col_teacher, col_student = st.columns([1, 1])
+# Layout: Creating two functional columns
+col1, col2 = st.columns(2)
 
-with col_teacher:
-    st.header("🎙️ Teacher's Section")
-    st.info("Teacher is speaking... (Live Captions)")
+with col1:
+    # Teacher Interface Section
+    st.markdown('<div class="teacher-box"><h3>👨‍🏫 Teacher Panel</h3></div>', unsafe_allow_html=True)
+    st.write("Input lecture content (Speech-to-Text Simulation):")
+    lecture_text = st.text_area("", height=200, placeholder="Type lesson here...", key="teacher_input")
     
-    # Input area for teacher's speech
-    speech_input = st.text_area("Live Audio-to-Text Stream:", height=150, placeholder="Teacher's words will appear here...")
-    
-    process_btn = st.button("🚀 Broadcast to Students")
+    # Button to trigger AI analysis and broadcast content
+    broadcast = st.button("📡 Broadcast to Students")
 
-with col_student:
-    st.header("📱 Student's Dashboard")
+with col2:
+    # Student Interface Section
+    st.markdown('<div class="student-box"><h3>📖 Student View</h3></div>', unsafe_allow_html=True)
     
-    if process_btn and speech_input:
-        with st.spinner('AI analyzing the lecture...'):
-            time.sleep(1) # Simulating real-time processing
-            
-            # Calling our ML Logic
-            subject, latency = ml_logic.process_ai(speech_input)
-            
-            # Student views the organized content
-            st.success(f"**Subject Identified:** {subject}")
-            
-            st.markdown(f"""
-            **Lecture Summary:**
-            > {speech_input}
-            """)
-            
-            st.metric(label="System Response Speed", value=f"{latency} sec")
+    if broadcast and lecture_text:
+        # Visual indicator for data processing
+        status = st.empty()
+        status.info("Teacher is broadcasting... AI is analyzing the content.")
+        time.sleep(1) # Simulating network/processing delay
+        status.empty()
+
+        # Execute AI logic from ml_logic.py
+        subject, latency = ml_logic.process_ai(lecture_text)
+        
+        # Display the output to students
+        st.subheader(f"Identified Topic: {subject}")
+        st.markdown(f"**Lecture Notes:**\n\n{lecture_text}")
+        
+        # Sidebar: Technical metrics for evaluation
+        st.sidebar.success("✅ AI Engine Processed Successfully")
+        st.sidebar.metric("Prediction Latency", f"{latency} sec")
+        st.sidebar.write(f"Algorithm: Random Forest & Linear Regression")
+        
     else:
-        st.warning("Waiting for the teacher to start the lecture...")
+        st.write("Waiting for the teacher to start the session...")
 
-# Sidebar for Guide's verification
-st.sidebar.title("🛠️ Backend Intelligence")
-st.sidebar.write("This system is powered by:")
-st.sidebar.markdown("""
-- **Random Forest:** Subject Classification
-- **Linear Regression:** Latency Prediction
-- **K-Means:** Content Grouping
-""")
-
-if st.sidebar.button("Show Model Accuracy"):
-    st.sidebar.write("Current Model Accuracy: **94%**")
+st.markdown("---")
+st.caption("Developed by Nandini | LinguaLearn AI Engine")
