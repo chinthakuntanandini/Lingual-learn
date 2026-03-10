@@ -71,3 +71,4 @@ def process_ai(text):
     final_time = max(0.1, round(float(time_pred), 2))
     
     return sub, final_time
+
