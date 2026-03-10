@@ -5,59 +5,69 @@ from sklearn.linear_model import LinearRegression
 from sklearn.cluster import KMeans
 
 # 1. Classification Model Initialization
-# TfidfVectorizer converts text into numerical features
 vectorizer = TfidfVectorizer()
-# RandomForest is used to categorize the teacher's speech into subjects
 clf = RandomForestClassifier()
 
 def train_classification():
-    # Training dataset: Sample sentences and their corresponding subject labels
-    X_train = ["The cell is basic unit", "Solve x and y", "Gravity pulls objects", "Python coding"]
-    y_train = ["Biology", "Mathematics", "Physics", "Computer Science"]
+    # Expanded training data for better accuracy
+    X_train = [
+        "The cell is the basic unit of life", "Photosynthesis in plants", # Biology
+        "Solve the following quadratic equations", "Calculate the area of circle", # Mathematics
+        "Newton's laws of motion and gravity", "Electromagnetic induction", # Physics
+        "Data Base Management System and SQL", "Computer networks and security", # Computer Science
+        "Chemical reactions and periodic table", "Atomic structure and bonding" # Chemistry
+    ]
+    y_train = [
+        "Biology", "Biology", 
+        "Mathematics", "Mathematics", 
+        "Physics", "Physics", 
+        "Computer Science", "Computer Science",
+        "Chemistry", "Chemistry"
+    ]
     
-    # Transform text data into numerical vectors
+    # Transform text and train the Random Forest model
     X_v = vectorizer.fit_transform(X_train)
-    # Train the classifier model
     clf.fit(X_v, y_train)
 
-# 2. Regression Model Initialization
-# LinearRegression is used to predict processing time (Latency)
+# 2. Regression Model Initialization (Predicting Latency)
 reg = LinearRegression()
 
 def train_regression():
-    # X_len represents word count in a sentence, y_time represents actual processing time in seconds
-    X_len = np.array([[5], [10], [15], [20]]) 
-    y_time = np.array([0.5, 1.0, 1.5, 2.0])    
-    # Train the model to learn the relationship between sentence length and time
+    # Training data: Number of words vs Processing time in seconds
+    X_len = np.array([[5], [10], [20], [50], [100]]) 
+    y_time = np.array([0.2, 0.5, 1.0, 2.5, 5.0])    
     reg.fit(X_len, y_time)
 
-# 3. Clustering Logic for Post-Class Summary
+# 3. Clustering Logic (Grouping similar content)
 def get_clusters(text_list):
-    # Clustering requires at least two data points (sentences)
     if len(text_list) < 2: return [0]
-    
     vec = TfidfVectorizer()
     X = vec.fit_transform(text_list)
-    
-    # K-Means groups similar sentences into thematic clusters (e.g., Topic A and Topic B)
-    km = KMeans(n_components=2)
+    km = KMeans(n_components=2, n_init=10)
     km.fit(X)
-    return km.labels_ # Returns the cluster index for each sentence
+    return km.labels_
 
-# Initialize and train models on startup
+# Execute training on startup
 train_classification()
 train_regression()
 
 def process_ai(text):
     """
-    Main function to process teacher's speech through the ML pipeline.
-    Returns: Detected Subject (Classification) and Predicted Time (Regression).
+    Main AI engine function.
+    Processes the input text to return Subject and Predicted Latency.
     """
-    # Prediction: Identify the subject of the speech
-    sub = clf.predict(vectorizer.transform([text]))[0]
+    if not text.strip():
+        return "Unknown", 0.0
+        
+    # Classification: Identify the subject
+    X_input = vectorizer.transform([text])
+    sub = clf.predict(X_input)[0]
     
-    # Prediction: Estimate latency based on sentence word count
+    # Regression: Predict latency based on word count
     word_count = len(text.split())
     time_pred = reg.predict([[word_count]])[0]
     
-    return sub, round(time_pred, 2)
+    # Ensuring time prediction isn't negative
+    final_time = max(0.1, round(float(time_pred), 2))
+    
+    return sub, final_time
