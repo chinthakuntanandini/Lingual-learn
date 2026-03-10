@@ -2,98 +2,100 @@ import streamlit as st
 import ml_logic
 from googletrans import Translator
 from fpdf import FPDF
+from streamlit_mic_recorder import mic_recorder # Install this via pip
 
-# Initialize Translator
 translator = Translator()
 
 st.set_page_config(page_title="LinguaLearn AI Pro", layout="wide")
 
-# Custom CSS
-st.markdown("""
-    <style>
-    .main-title { text-align: center; color: #1976d2; margin-bottom: 30px; }
-    .role-container { background-color: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #ddd; }
-    </style>
-    """, unsafe_allow_html=True)
+st.markdown('<h1 style="text-align: center; color: #1976d2;">🎓 LinguaLearn AI: Advanced Classroom</h1>', unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-title">🎓 LinguaLearn AI: Advanced Classroom</h1>', unsafe_allow_html=True)
-
-# --- STEP 1: ROLE SELECTION ---
-# This ensures that the user chooses their role first
+# Role Selection
 st.sidebar.title("👤 User Control")
 role = st.sidebar.radio("Select Your Role:", ["Teacher 👨‍🏫", "Student 📖"])
 
-# Initialize session state for the lecture content
-if 'shared_lecture' not in st.session_state:
-    st.session_state['shared_lecture'] = ""
+# Initialize Session States
+if 'final_content' not in st.session_state:
+    st.session_state['final_content'] = ""
+if 'final_summary' not in st.session_state:
+    st.session_state['final_summary'] = ""
+if 'final_subject' not in st.session_state:
+    st.session_state['final_subject'] = ""
 
-# --- STEP 2: TEACHER INTERFACE ---
+# --- TEACHER DASHBOARD ---
 if role == "Teacher 👨‍🏫":
     st.subheader("👨‍🏫 Teacher Dashboard")
-    st.info("Input your lecture below to broadcast it to students.")
     
-    lecture_input = st.text_area("Live Lecture Input (English):", height=250, 
-                                placeholder="Type or paste your lecture content here...")
+    # 1. Voice to Text Feature
+    st.write("🎙️ **Step 1: Record your lecture**")
+    audio = mic_recorder(start_prompt="Click to Start Speaking", stop_prompt="Stop Recording", key='recorder')
     
-    if st.button("📡 Broadcast to Students"):
-        if lecture_input.strip():
-            st.session_state['shared_lecture'] = lecture_input
-            st.success("✅ Lecture broadcasted successfully!")
-        else:
-            st.warning("Please enter some content before broadcasting.")
+    # Text input for manual correction or direct typing
+    lecture_input = st.text_area("Lecture Transcript (Edit if needed):", 
+                                value=audio['text'] if audio else "", 
+                                height=150)
 
-# --- STEP 3: STUDENT INTERFACE ---
+    if st.button("🔍 Step 2: Generate AI Analysis"):
+        if lecture_input.strip():
+            # Run AI Logic
+            subject, _ = ml_logic.process_ai(lecture_input)
+            st.session_state['final_subject'] = subject
+            st.session_state['final_content'] = lecture_input
+            # Initial AI Summary
+            st.session_state['final_summary'] = f"The lecture focused on {subject}. Key points discussed include the fundamental concepts and practical applications of the topic."
+        else:
+            st.warning("Please record or type something first.")
+
+    # 2. Teacher Edits the Summary
+    if st.session_state['final_summary']:
+        st.markdown("---")
+        st.write("📝 **Step 3: Review & Edit Summary**")
+        edited_summary = st.text_area("Final Summary (Teacher can modify this before students see it):", 
+                                     value=st.session_state['final_summary'], height=100)
+        
+        if st.button("📡 Step 4: Final Broadcast to Students"):
+            st.session_state['final_summary'] = edited_summary
+            st.success("✅ Lecture and Edited Summary sent to students!")
+
+# --- STUDENT HUB ---
 else:
     st.subheader("📖 Student Learning Hub")
-    
-    # Language settings only appear for students
-    st.sidebar.markdown("---")
     st.sidebar.header("🌐 Translation Settings")
-    target_lang = st.sidebar.selectbox("Preferred Language:", ["English", "Telugu", "Hindi", "Tamil", "Spanish"])
-    lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi", "Tamil": "ta", "Spanish": "es"}
+    target_lang = st.sidebar.selectbox("Preferred Language:", ["English", "Telugu", "Hindi", "Tamil"])
+    lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi", "Tamil": "ta"}
 
-    if st.session_state['shared_lecture']:
-        # Run AI Logic
-        subject, latency = ml_logic.process_ai(st.session_state['shared_lecture'])
+    if st.session_state['final_content']:
+        st.info(f"📚 Subject: {st.session_state['final_subject']}")
         
-        # Translation
-        translated_text = translator.translate(st.session_state['shared_lecture'], dest=lang_map[target_lang]).text
-        
-        # UI Layout for student
-        st.markdown(f"### Identified Topic: **{subject}**")
-        
-        col_orig, col_trans = st.columns(2)
-        with col_orig:
-            st.info("**Original Transcript (English)**")
-            st.write(st.session_state['shared_lecture'])
-            
-        with col_trans:
-            st.success(f"**Translated Content ({target_lang})**")
-            st.write(translated_text)
+        # Translation of Content & Summary
+        translated_content = translator.translate(st.session_state['final_content'], dest=lang_map[target_lang]).text
+        translated_summary = translator.translate(st.session_state['final_summary'], dest=lang_map[target_lang]).text
 
-        # Summary and PDF Section
-        st.markdown("---")
-        summary = f"Summary of {subject}: The lecture highlights key concepts starting with: {st.session_state['shared_lecture'][:100]}..."
-        st.write("📝 **AI Summary:**", summary)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("📖 **Full Lecture**")
+            st.success(translated_content)
+        with col2:
+            st.write("📝 **Teacher's Final Summary**")
+            st.warning(translated_summary)
 
-        # PDF Download
+        # 3. PDF Generation (includes everything)
         pdf = FPDF()
         pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="LinguaLearn AI - Study Notes", ln=True, align='C')
         pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="LinguaLearn AI Notes", ln=True, align='C')
-        pdf.multi_cell(0, 10, txt=f"Subject: {subject}\n\nSummary: {summary}\n\nContent: {st.session_state['shared_lecture']}")
+        pdf.ln(10)
+        pdf.multi_cell(0, 10, txt=f"Subject: {st.session_state['final_subject']}\n\nSUMMARY:\n{st.session_state['final_summary']}\n\nFULL TRANSCRIPT:\n{st.session_state['final_content']}")
         
         st.download_button(
-            label="📥 Download Notes as PDF",
+            label="📥 Download Study Material (PDF)",
             data=pdf.output(dest='S').encode('latin-1'),
-            file_name="lecture_notes.pdf",
+            file_name="Class_Notes.pdf",
             mime="application/pdf"
         )
-        
-        # Sidebar metrics for AI performance
-        st.sidebar.metric("AI Prediction Latency", f"{latency} sec")
     else:
-        st.warning("Awaiting a live lecture from the teacher. Please stay tuned!")
+        st.write("Awaiting lecture from teacher...")
 
 st.markdown("---")
-st.caption("Developed by Nandini | LinguaLearn AI Engine")
+st.caption("Developed by Nandini | AI/ML Driven Educational Solution")
