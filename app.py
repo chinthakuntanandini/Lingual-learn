@@ -1,46 +1,68 @@
 import streamlit as st
-import ml_logic  # Custom AI/ML logic for topic extraction
-from googletrans import Translator
-from fpdf import FPDF
 from streamlit_mic_recorder import mic_recorder
+import ml_logic 
 
-# --- Application Setup ---
-st.set_page_config(page_title="LinguaLearn AI Pro", layout="wide")
-translator = Translator()
+# Setting up page title and layout
+st.set_page_config(page_title="Teacher-Student AI Assistant", layout="wide")
 
-# --- Initialize Session State ---
-# These keep data persistent across app reruns (switching roles, clicking buttons)
-if 'final_summary' not in st.session_state:
-    st.session_state['final_summary'] = ""
-if 'broadcast_ready' not in st.session_state:
-    st.session_state['broadcast_ready'] = False
-if 'lecture_content' not in st.session_state:
-    st.session_state['lecture_content'] = ""
+st.title("👨‍🏫 Teacher-Student Learning Hub")
 
-# --- Role Selection Sidebar ---
-st.sidebar.title("👤 User Control")
-role = st.sidebar.radio("Select Your Role:", ["Teacher 👨‍🏫", "Student 📖"])
+# --- TEACHER SECTION ---
+# This section allows the teacher to record the live lecture
+st.header("🎤 Teacher's Lecture (Recording)")
+audio_data = mic_recorder(start_prompt="Start Recording Class", stop_prompt="End Class", key='recorder')
 
-# -------------------------------------------
-# --- TEACHER DASHBOARD ---
-# -------------------------------------------
-if role == "Teacher 👨‍🏫":
-    st.header("👨‍🏫 Teacher Dashboard")
+if audio_data:
+    with st.spinner("AI is analyzing the lecture..."):
+        # Converting speech to full text using ml_logic
+        full_text = ml_logic.process_ai(audio_data['bytes'])
+        st.session_state['lecture_text'] = full_text
+        
+        # Generating English Summary from the full text
+        st.session_state['english_summary'] = ml_logic.summarize_text(full_text)
+
+# --- STUDENT SECTION ---
+# This section displays the analyzed content for students
+if 'english_summary' in st.session_state:
+    st.write("---")
+    st.header("📖 Student's Learning View")
     
-    # Step 1: Speech-to-Text Input
-    st.write("🎙️ **Step 1: Record Lecture (Voice-to-Text)**")
-    # This component captures audio and returns transcribed text
-    audio = mic_recorder(start_prompt="Start Recording", stop_prompt="Stop Recording", key='recorder')
+    # 1. Language Selection
+    # Students can pick their preferred language for translation
+    student_lang = st.selectbox("Choose your Language (Preferred):", 
+                                ["Telugu (తెలుగు)", "Hindi (हिंदी)", "Tamil (தமிழ்)", "Kannada (ಕನ್ನಡ)"])
     
-    # Display the text. If audio is recorded, it fills automatically; otherwise, manual typing is allowed.
-    recorded_text = audio['text'] if audio and 'text' in audio else ""
-    lecture_text = st.text_area("Lecture Content:", value=recorded_text, height=150)
+    # Language code mapping for the translation engine
+    lang_map = {"Telugu (తెలుగు)": "te", "Hindi (हिंदी)": "hi", "Tamil (தமிழ்)": "ta", "Kannada (కನ್ನಡ)": "kn"}
+    target_code = lang_map[student_lang]
 
-    # Step 2: AI Processing
-    if st.button("Generate AI Summary"):
-        if lecture_text.strip():
-            # Calling the AI model from ml_logic to identify the topic
-            topic, _ = ml_logic.process_ai(lecture_text)
-            
-            st.session_state['lecture_content'] = lecture_text
-            st.session_state['topic'] = topic
+    # 2. Dual Language Summary Display
+    # Displays English and the Selected Language side-by-side
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🇬🇧 English Summary")
+        st.info(st.session_state['english_summary'])
+
+    with col2:
+        st.subheader(f"🌐 {student_lang} Summary")
+        # Translating the summary using ml_logic
+        translated_summary = ml_logic.translate_summary(st.session_state['english_summary'], target_code)
+        st.success(translated_summary)
+
+    # 3. Lesson Flow Diagram
+    # A visual representation of the class structure
+    st.write("---")
+    st.subheader("📊 Lesson Flow Diagram")
+    
+    # Creating a flow chart using Graphviz
+    st.graphviz_chart(f'''
+        digraph {{
+            node [shape=box, style=filled, color=lightblue, fontname="Arial"]
+            "Start Class" -> "Key Concepts"
+            "Key Concepts" -> "In-depth Examples"
+            "In-depth Examples" -> "Final Summary"
+        }}
+    ''')
+
+st.write("---")
