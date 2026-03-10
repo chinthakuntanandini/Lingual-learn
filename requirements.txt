@@ -1,5 +1,5 @@
 streamlit
-scikit-learn
-numpy
 googletrans==4.0.0-rc1
 fpdf
+streamlit-mic-recorder
+SpeechRecognition
