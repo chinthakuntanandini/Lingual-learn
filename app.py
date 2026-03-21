@@ -47,7 +47,7 @@ def init_connection():
         return None
 
 # Initializing the database object
-db = init_connection()
+db = None
 
 # --- 2. UI SETTINGS ---
 st.set_page_config(page_title="NeuralBridge AI", layout="wide")
