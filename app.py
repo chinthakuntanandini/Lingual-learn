@@ -35,6 +35,7 @@ if page == "Student Join":
             }
             st.session_state.requests.append(student)
             st.success(f"{name}, your request sent to teacher! (Demo Mode)")
+            st.rerun()   # 🔥 IMPORTANT FIX
         else:
             st.warning("Please enter Name and Roll Number")
 
@@ -52,10 +53,11 @@ elif page == "Teacher Dashboard":
                 st.write(f"{req['name']} ({req['roll']}) - {req['language']}")
 
             with col2:
-                if st.button(f"Approve {req['roll']}", key=i):
+                if st.button(f"Approve {req['roll']}", key=f"btn_{i}"):
                     st.session_state.approved.append(req)
                     st.session_state.requests.remove(req)
                     st.success(f"{req['name']} Approved!")
+                    st.rerun()   # 🔥 IMPORTANT FIX
 
 # ---------------- LIVE CLASS ----------------
 elif page == "Live Class":
@@ -68,6 +70,7 @@ elif page == "Live Class":
     if st.button("Update Class"):
         st.session_state.class_content = content
         st.success("Class Updated!")
+        st.rerun()
 
     # Student view
     st.subheader("Student View")
