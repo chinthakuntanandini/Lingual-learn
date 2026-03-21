@@ -1,16 +1,14 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
 from fpdf import FPDF
 from googletrans import Translator
 import datetime
 
-# --- 1. FIREBASE SETUP ---
-if not firebase_admin._apps:
-    cred = credentials.Certificate("key.json") # మీ key.json ఫైల్ పేరు ఇక్కడ ఉండాలి
-    firebase_admin.initialize_app(cred)
+# --- 1. INITIALIZE SESSION STATE (Firebase కి బదులుగా) ---
+if 'requests' not in st.session_state:
+    st.session_state['requests'] = {}
+if 'class_log' not in st.session_state:
+    st.session_state['class_log'] = ""
 
-db = firestore.client()
 translator = Translator()
 
 # --- 2. PDF GENERATION FUNCTION ---
@@ -35,15 +33,14 @@ if sidebar == "Student Join":
     
     if st.button("Request to Join"):
         if name and roll_no:
-            doc_ref = db.collection("requests").document(roll_no)
-            doc_ref.set({
+            # డేటాను Session State లో సేవ్ చేస్తున్నాం
+            st.session_state['requests'][roll_no] = {
                 "name": name,
                 "roll_no": roll_no,
                 "language": lang,
-                "status": "pending",
-                "timestamp": datetime.datetime.now()
-            })
-            st.success(f"Request sent to teacher, {name}! Please wait for approval.")
+                "status": "pending"
+            }
+            st.success(f"Request sent! Please wait for teacher approval, {name}.")
         else:
             st.error("Please fill all details.")
 
@@ -51,25 +48,26 @@ if sidebar == "Student Join":
 elif sidebar == "Teacher Dashboard":
     st.header("Teacher Control Panel")
     
-    # Show Requests
-    requests = db.collection("requests").where("status", "==", "pending").stream()
-    
     st.subheader("Pending Requests")
-    for req in requests:
-        data = req.to_dict()
-        col1, col2 = st.columns([3, 1])
-        col1.write(f"ID: {data['roll_no']} | Name: {data['name']} | Lang: {data['language']}")
-        if col2.button("Accept", key=data['roll_no']):
-            db.collection("requests").document(data['roll_no']).update({"status": "accepted"})
-            st.rerun()
+    has_requests = False
+    for roll, data in st.session_state['requests'].items():
+        if data['status'] == "pending":
+            has_requests = True
+            col1, col2 = st.columns([3, 1])
+            col1.write(f"ID: {roll} | Name: {data['name']} | Lang: {data['language']}")
+            if col2.button("Accept", key=roll):
+                st.session_state['requests'][roll]['status'] = "accepted"
+                st.rerun()
+    
+    if not has_requests:
+        st.info("No pending requests.")
 
     # Attendance PDF
     if st.button("Generate Attendance PDF"):
-        accepted_students = db.collection("requests").where("status", "==", "accepted").stream()
         att_list = "Class Attendance Report\n" + "-"*30 + "\n"
-        for s in accepted_students:
-            d = s.to_dict()
-            att_list += f"{d['roll_no']} - {d['name']}\n"
+        for roll, data in st.session_state['requests'].items():
+            if data['status'] == "accepted":
+                att_list += f"{roll} - {data['name']}\n"
         
         fname = create_pdf(att_list, "attendance.pdf")
         with open(fname, "rb") as f:
@@ -79,30 +77,30 @@ elif sidebar == "Teacher Dashboard":
 elif sidebar == "Live Class":
     st.header("Live Interactive Class")
     
-    # Teacher Input
     topic = st.text_input("Class Topic")
     teacher_speech = st.text_area("Teacher's Speech (English)")
     
     if st.button("Start Class & Translate"):
-        # Simulate translation for students
-        all_students = db.collection("requests").where("status", "==", "accepted").stream()
+        st.subheader("Translated Content for Students")
+        current_notes = f"Topic: {topic}\nDate: {datetime.date.today()}\n\n"
         
-        st.subheader("Translated Class Content")
-        class_content = f"Topic: {topic}\nDate: {datetime.date.today()}\n\n"
+        accepted_students = [d for d in st.session_state['requests'].values() if d['status'] == "accepted"]
         
-        for s in all_students:
-            data = s.to_dict()
-            target_lang = data['language'].lower()[:2] # Get 'te', 'hi' etc
-            translated = translator.translate(teacher_speech, dest=target_lang).text
+        if not accepted_students:
+            st.warning("No students accepted yet!")
+        else:
+            for student in accepted_students:
+                target_lang = student['language'].lower()[:2]
+                translated = translator.translate(teacher_speech, dest=target_lang).text
+                
+                st.write(f"📝 **For {student['name']} ({student['language']}):**")
+                st.info(translated)
+                current_notes += f"[{student['language']}] {translated}\n\n"
             
-            st.write(f"📝 **For {data['name']} ({data['language']}):**")
-            st.info(translated)
-            class_content += f"[{data['language']}] {translated}\n\n"
-        
-        # Table / Diagram Simulation
-        st.table({"Points": ["Topic Introduction", "Main Concept", "Conclusion"]})
-        
-        # Save Class Notes PDF
-        fname = create_pdf(class_content, "class_notes.pdf")
-        with open(fname, "rb") as f:
-            st.download_button("Download Class Notes PDF", f, file_name="class_notes.pdf")
+            # Table/Diagram Simulation
+            st.table({"Points": ["Introduction", "Main Concept", "Conclusion"]})
+            
+            # Save to PDF
+            fname = create_pdf(current_notes, "class_notes.pdf")
+            with open(fname, "rb") as f:
+                st.download_button("Download Class Notes PDF", f, file_name="class_notes.pdf")
