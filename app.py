@@ -1,24 +1,40 @@
 import streamlit as st
 from google.cloud import firestore
 from google.oauth2 import service_account
-import google.cloud.exceptions
+import json
 
-# --- 1. FIREBASE CONNECTION SETTINGS ---
+# --- 1. FIREBASE CONNECTION SETTINGS (UPDATED) ---
 @st.cache_resource
 def init_connection():
     try:
-        # Streamlit Secrets నుండి వివరాలను తీసుకుంటుంది
+        # Streamlit Secrets నుండి వివరాలను డిక్షనరీగా తీసుకోవడం
         firebase_info = st.secrets["firebase"]
         
-        # Credentials తయారు చేయడం
-        creds = service_account.Credentials.from_service_account_info(firebase_info)
+        # కీ లో ఉన్న కొత్త లైన్ (\n) సమస్యను సరిచేయడం
+        # ఇది PEM ఫైల్ ఎర్రర్ రాకుండా చూస్తుంది
+        key_content = firebase_info["private_key"].replace("\\n", "\n")
         
-        # Firestore క్లయింట్‌ని రిటర్న్ చేస్తుంది
+        # కనెక్షన్ వివరాలను సిద్ధం చేయడం
+        creds_dict = {
+            "type": firebase_info["type"],
+            "project_id": firebase_info["project_id"],
+            "private_key_id": firebase_info["private_key_id"],
+            "private_key": key_content,
+            "client_email": firebase_info["client_email"],
+            "client_id": firebase_info["client_id"],
+            "auth_uri": firebase_info["auth_uri"],
+            "token_uri": firebase_info["token_uri"],
+            "auth_provider_x509_cert_url": firebase_info["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": firebase_info["client_x509_cert_url"],
+        }
+        
+        creds = service_account.Credentials.from_service_account_info(creds_dict)
         return firestore.Client(credentials=creds, project=firebase_info["project_id"])
     except Exception as e:
         st.error(f"Firebase Connection Error: {e}")
         return None
 
+# డేటాబేస్ ఇనిషియలైజేషన్
 db = init_connection()
 
 # --- 2. UI SETTINGS ---
@@ -37,9 +53,11 @@ if page == "Student Join":
     lang = st.selectbox("Select Your Language", ["Telugu", "Hindi", "English", "Tamil"])
 
     if st.button("Register & Join"):
-        if name and roll:
+        if db is None:
+            st.error("Database connection failed. Check your Secrets.")
+        elif name and roll:
             try:
-                # Firestore లో డేటా సేవ్ చేయడం (Line 42 issue fixed)
+                # Firestore లో డేటా సేవ్ చేయడం
                 db.collection("requests").document(roll).set({
                     "name": name,
                     "roll": roll,
@@ -56,24 +74,33 @@ if page == "Student Join":
 elif page == "Teacher Dashboard":
     st.header("Teacher Approval Panel")
     
-    try:
-        # Pending రిక్వెస్ట్‌లను చూపించడం
-        requests_ref = db.collection("requests").where("status", "==", "pending").stream()
-        
-        for doc in requests_ref:
-            data = doc.to_dict()
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**{data['name']}** ({data['roll']}) - {data['language']}")
-            with col2:
-                if st.button("Approve", key=doc.id):
-                    db.collection("requests").document(doc.id).update({"status": "approved"})
-                    st.rerun()
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
+    if db is None:
+        st.error("Database connection failed. Check your Secrets.")
+    else:
+        try:
+            # Pending రిక్వెస్ట్‌లను చూపించడం
+            requests_ref = db.collection("requests").where("status", "==", "pending").stream()
+            
+            # రిక్వెస్ట్‌లు ఉన్నాయో లేదో చూడటానికి
+            has_requests = False
+            for doc in requests_ref:
+                has_requests = True
+                data = doc.to_dict()
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**{data['name']}** ({data['roll']}) - {data['language']}")
+                with col2:
+                    if st.button("Approve", key=doc.id):
+                        db.collection("requests").document(doc.id).update({"status": "approved"})
+                        st.rerun()
+            
+            if not has_requests:
+                st.info("No pending requests at the moment.")
+                
+        except Exception as e:
+            st.error(f"Error fetching data: {e}")
 
 # --- 5. LIVE CLASS PAGE ---
 elif page == "Live Class":
     st.header("Live Interactive Session")
     st.write("Translation and Voice features will load here...")
-    # ఇక్కడ మీ పాత Voice Recognition కోడ్ యాడ్ చేసుకోవచ్చు.
