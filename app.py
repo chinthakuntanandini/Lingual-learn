@@ -1,5 +1,4 @@
 import streamlit as st
-import speech_recognition as sr
 from googletrans import Translator
 from gtts import gTTS
 import tempfile
@@ -62,22 +61,15 @@ elif page == "Teacher Dashboard":
 
 # ---------------- LIVE CLASS ----------------
 elif page == "Live Class":
-    st.header("🎤 Live Class")
+    st.header("📚 Live Class")
 
-    # Voice input
-    if st.button("Start Voice"):
-        r = sr.Recognizer()
-        with sr.Microphone() as source:
-            st.info("Speak now...")
-            audio = r.listen(source)
+    # Teacher text input (Cloud safe)
+    content = st.text_input("Enter Class Content")
 
-            try:
-                text = r.recognize_google(audio)
-                st.session_state.class_content = text
-                st.success("Captured!")
-                st.rerun()
-            except:
-                st.error("Voice error")
+    if st.button("Send Class"):
+        st.session_state.class_content = content
+        st.success("Class Updated!")
+        st.rerun()
 
     st.subheader("Students")
 
@@ -89,7 +81,7 @@ elif page == "Live Class":
 
     st.markdown("---")
 
-    st.subheader("📚 Class Content + Audio")
+    st.subheader("🌐 Translated Content + Audio")
 
     if st.session_state.class_content != "":
         for stu in st.session_state.approved:
@@ -98,9 +90,9 @@ elif page == "Live Class":
                 dest=stu["language"]
             )
 
-            st.write(f"👨‍🎓 {stu['name']} → {translated.text}")
+            st.write(f"{stu['name']} → {translated.text}")
 
-            # 🔊 Text to Speech
+            # 🔊 Audio
             tts = gTTS(translated.text, lang=stu["language"])
             temp_file = tempfile.NamedTemporaryFile(delete=False)
             tts.save(temp_file.name)
