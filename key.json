@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "neuralbridge-eacc3",
+  "private_key_id": "74ab770a54e88a1c1a1faeacfb4fcd3e067c0592",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDKvUx9Ih9h5Vkw\nCfanbgbE5kYrne5/ST3lPGTjkLN18KHvwKgsLYtyxXFhnaIAaAtn0cU12998Mw+s\nKj0pNLoun7vLE0VI+4NYOTKKnZRoIeHotX3SqworNiDZBun3dNxZ2hNqhE6laHNl\nOMJTWoJUVDLOfxYRqWWQjtsNjEeTIlTWpzrlb76KPVdnPYNsVyOc3nsI9aWUzpUK\nRPx2klvJHeJqHftAgovVtgZpjo9q8eKEZHXZp9RtM/FqJ5D9cOiTZQQ3+PJUy10x\nXanW1qmwd+si6Ifpwo4IPBObSjk8S+Q6IiyZrBhWblDRD60a51eOVePoiq8dV/Nw\nsRHbnUqLAgMBAAECggEAL9CaeA6yqRN+x+Ipro44AXsvxHywcYu0Edr/Dl6jvKae\ngp2E7Dpnn49qcLPNL9xaCEfEg7HSEQg344pot02stW9NypTGa/KJpSaEQYXtqOuI\nzKn1PVjCgrN25siHKKoCiBxzJNWEeOVcBdzvk9oOT9Y1z1bQvSSfBAt1JUpW3R+5\ntwwJ11ZurDQoNlUxphu91PHCC4fASw4rpD3rsTNyXeSbtQbZVp/DcgQsGVfs4sGh\nvhwAWyFV5OUK2RLcylVRyr6cZwlgewLfAWE/LE+k0PPuoQCaKIxPrcPTN52aPWqW\nIJAQR3cMo6be1S6uyUxXrl/ocpGuSyRf/g56b70quQKBgQDo1rySEYnQ21kpyUTM\nlMA6i9FKxXua+Sx9R6Iq+Upyf0v1SCQdUDftUmyr2FlI4TV3FdraO1VEhJr4RXsR\nJjgDDsqdSUOjDBx1ALv3iOxXxoczoHisryHtp6zVSukYcH8LjIA0LBKY7kgvMS4M\n5CoJP7fzWJmQgYjwgvsp/yfA4wKBgQDe6BQvDZ1EonbCOat/6EDYAydsg3pgKDNe\nVcTY6ExEIO+Fo5X4x18ydCeWx8PTfbpTEo2TQIzUOb0kVi0NZeplXzswgVlWVUoy\noGAZcnJ6peFjBDWem3xxErcX5eKCZBaGQp5WaYUOxPtzIvUlOF5nCA8KWcNxMVdk\n32jD9UbIOQKBgAxp1mfbM4PFDf3iUx6tF4qHhcL8wFhEzJBpT0YHQGbWTpBnJjXB\n3xlx+YU35ZqzFwygR6i23RboEvMFkUgax4WyNi8ohsicjq/WOC88R41ucirYdVaP\nh7mJ5PcCJWc+KCfPd85QQzWQDp0lfBUH3Q3dLct1f8pqfYiFEyrsBYyNAoGBALrx\nIjRQE6xDIJxFZ2pvKyq+gmrEXXaVYHdmMR/EummMwbRvfFBXTKRwu979jGMrl38i\nGS/8u98kyVbXGxOYfJsl4esNIBKClyacT9wnmpD3222CU0HAnv3ptzpIps26CRXy\nev53ooq/cy6di8D6ZFm+bXa9z2Z3/hZwM1ncs88pAoGBALnrhs95jqGOYddyGGPX\nkGPYfFWNAS3G/J+l+lOEKTora82LlZMY/80oOWZM3cMLcbYWPBETmgmJHUkCAoUE\nwH2m8YmznzH+rzJeOabFR1m93ymAhRu/Je9biR2iFjvAO2EmAWHMba3owH3Gy66F\numQTE9DDEErnG9ufriB1iSYL\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@neuralbridge-eacc3.iam.gserviceaccount.com",
+  "client_id": "107849600438742409498",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40neuralbridge-eacc3.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
