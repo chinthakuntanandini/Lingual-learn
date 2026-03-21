@@ -1,6 +1,5 @@
 streamlit
-fpdf
+SpeechRecognition
 googletrans==4.0.0-rc1
-firebase-admin
-google-cloud-firestore
-google-auth
+gtts
+pyaudio
