@@ -1,4 +1,3 @@
 streamlit
-firebase-admin
 fpdf
 googletrans==4.0.0-rc1
