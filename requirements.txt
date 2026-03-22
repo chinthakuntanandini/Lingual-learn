@@ -1,7 +1,6 @@
 streamlit
-deep-translator
 google-cloud-firestore
-google-cloud-speech
-fpdf
+google-oauth2
+SpeechRecognition
+pydub
 streamlit-mic-recorder
-pandas
