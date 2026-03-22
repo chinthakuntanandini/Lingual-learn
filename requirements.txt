@@ -1,9 +1,8 @@
 streamlit
-googletrans==3.1.0a0
-gtts
+deep-translator
+gTTS
 fpdf
 pandas
 google-cloud-firestore
 google-oauth2
 SpeechRecognition
-PyAudio
