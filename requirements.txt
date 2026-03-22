@@ -1,8 +1,6 @@
 streamlit
 deep-translator
 gtts
-fpdf
-pandas
 google-cloud-firestore
 google-oauth2
 SpeechRecognition
