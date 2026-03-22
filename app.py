@@ -1,89 +1,62 @@
 import streamlit as st
 import pandas as pd
+from google.cloud import firestore
+from google.oauth2 import service_account
 from fpdf import FPDF
-from deep_translator import GoogleTranslator
-from streamlit_mic_recorder import mic_recorder
 
-# --- 1. CONFIG & SESSION STATE ---
-st.set_page_config(page_title="NeuralBridge AI", layout="wide")
+# --- 1. FIREBASE CONNECTION ---
+@st.cache_resource
+def init_db():
+    if "firebase" in st.secrets:
+        info = dict(st.secrets["firebase"])
+        info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
+        creds = service_account.Credentials.from_service_account_info(info)
+        return firestore.Client(credentials=creds, project=creds.project_id)
+    return None
 
-if 'approved_list' not in st.session_state:
-    # Demo కోసం కొంతమంది స్టూడెంట్స్ డేటా
-    st.session_state.approved_list = [
-        {"Name": "Nandini", "Roll": "193H1A0508", "Status": "Present"},
-        {"Name": "Kumar", "Roll": "193H1A0509", "Status": "Present"}
-    ]
-if 'live_content' not in st.session_state: st.session_state.live_content = ""
-if 'class_table' not in st.session_state: st.session_state.class_table = pd.DataFrame()
+db = init_db()
 
-# --- 2. PDF GENERATOR ---
-def create_final_report(summary, table_df, attendance_list):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="NeuralBridge: Final Class Report", ln=True, align='C')
-    
-    pdf.set_font("Arial", size=12)
-    pdf.ln(10)
-    pdf.multi_cell(0, 10, txt=f"Lecture Summary: \n{summary}")
-    
-    # Attendance Section in PDF
-    pdf.ln(10)
-    pdf.cell(0, 10, txt="Attendance List:", ln=True)
-    for student in attendance_list:
-        pdf.cell(0, 10, txt=f"- {student['Name']} ({student['Roll']}): {student['Status']}", ln=True)
-        
-    return pdf.output(dest='S').encode('latin-1')
-
-# --- 3. SIDEBAR ---
+# --- 2. SIDEBAR NAVIGATION ---
 st.sidebar.title("🎓 NeuralBridge AI")
 user_role = st.sidebar.radio("Select Your Role:", ["Student", "Teacher"])
 
-# --- 4. TEACHER MODULE ---
-if user_role == "Teacher":
-    t_page = st.sidebar.selectbox("Teacher Menu", ["Class Control & AI Table", "Approval Dashboard"])
-
-    if t_page == "Class Control & AI Table":
-        st.header("🎙️ Teacher Control Room")
-        
-        # Section 1: Attendance (ఇది ఇప్పుడు కొత్తగా యాడ్ చేశాను)
-        st.subheader("📋 Live Attendance Tracker")
-        if st.session_state.approved_list:
-            att_df = pd.DataFrame(st.session_state.approved_list)
-            st.table(att_df)
+# --- 3. STUDENT MODULE (Writing to Database) ---
+if user_role == "Student":
+    st.header("👤 Student Portal")
+    s_name = st.text_input("Name")
+    s_roll = st.text_input("Roll No")
+    
+    if st.button("Join Class"):
+        if db and s_name and s_roll:
+            # Firestore లో 'attendance' అనే కలెక్షన్ లో డేటా సేవ్ అవుతుంది
+            db.collection("attendance").document(s_roll).set({
+                "Name": s_name,
+                "Roll": s_roll,
+                "Status": "Present"
+            })
+            st.success(f"Done! {s_name}, your attendance is sent to Teacher.")
         else:
-            st.info("No students approved yet.")
+            st.error("Please fill details or check Database connection.")
 
-        st.divider()
-
-        # Section 2: Speak to Lecture
-        st.subheader("🎙️ 1. Speak to Lecture")
-        audio = mic_recorder(start_prompt="▶️ Start Speaking", stop_prompt="🛑 Stop & Process", key='t_mic')
-        if audio:
-            st.session_state.live_content = "AI captured: Today's topic is about Neural Networks and Database Connectivity."
+# --- 4. TEACHER MODULE (Reading from Database) ---
+elif user_role == "Teacher":
+    st.header("🎙️ Teacher Control Room")
+    st.subheader("📋 Live Attendance Tracker")
+    
+    if db:
+        # Database నుంచి లైవ్ గా డేటా తెచ్చుకుంటుంది
+        docs = db.collection("attendance").stream()
+        attendance_data = [doc.to_dict() for doc in docs]
         
-        teacher_edit = st.text_area("Edit Live Content:", value=st.session_state.live_content)
-        st.session_state.live_content = teacher_edit
+        if attendance_data:
+            df = pd.DataFrame(attendance_data)
+            st.table(df) # ఇక్కడ స్టూడెంట్ పంపిన డేటా కనిపిస్తుంది
+        else:
+            st.info("Waiting for students to join...")
+    
+    if st.button("Refresh Attendance"):
+        st.rerun() # కొత్త డేటా కోసం రిఫ్రెష్ బటన్
 
-        st.divider()
-
-        # Section 3: Speak to Table
-        st.subheader("📊 2. AI Table (Speak to Create)")
-        if st.button("Generate Summary Table"):
-            data = {"Topic": ["Introduction", "Architecture", "Demo"], "Time": ["10 min", "20 min", "15 min"]}
-            st.session_state.class_table = pd.DataFrame(data)
-            st.table(st.session_state.class_table)
-
-        st.divider()
-
-        # Section 4: Reports
-        st.subheader("📥 3. Final Reports")
-        if st.button("Prepare Final PDF"):
-            pdf_bytes = create_final_report(
-                st.session_state.live_content, 
-                st.session_state.class_table, 
-                st.session_state.approved_list
-            )
-            st.download_button("Download Complete Class Report", data=pdf_bytes, file_name="Final_Report.pdf")
-
-# (Student & Approval Dashboard logic follows...)
+    st.divider()
+    st.subheader("📥 Final Reports")
+    # (PDF generation logic follows...)
