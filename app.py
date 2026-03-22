@@ -3,18 +3,16 @@ import pandas as pd
 from google.cloud import firestore
 from google.oauth2 import service_account
 from streamlit_mic_recorder import mic_recorder
+import speech_recognition as sr
+import io
 
-# --- 1. SECURE DATABASE CONNECTION ---
+# --- 1. DATABASE CONNECTION ---
 @st.cache_resource
 def init_db():
-    """
-    Connects to Google Cloud Firestore and handles RSA key formatting.
-    Professional English Comment: This ensures real-time sync between Teacher and Student.
-    """
     try:
         if "firebase" in st.secrets:
             info = dict(st.secrets["firebase"])
-            # Fixing Private Key formatting
+            # Auto-rectifying the PEM formatting
             info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
             creds = service_account.Credentials.from_service_account_info(info)
             return firestore.Client(credentials=creds, project=info["project_id"])
@@ -24,78 +22,57 @@ def init_db():
 
 db = init_db()
 
-# --- 2. UI NAVIGATION ---
+# --- UI NAVIGATION ---
 st.sidebar.title("🎓 NeuralBridge AI")
-st.sidebar.caption("Real-time Multilingual Sync")
 mode = st.sidebar.radio("Navigation:", ["Student Portal", "Teacher Control"])
 
-# --- 3. STUDENT PORTAL ---
+# --- STUDENT PORTAL ---
 if mode == "Student Portal":
-    st.header("👤 Student Portal")
-    
-    # Section A: Attendance Sync
-    st.subheader("📋 Mark Attendance")
-    name = st.text_input("Full Name")
-    roll = st.text_input("Roll Number")
-    
-    if st.button("Submit Attendance"):
-        if db and name and roll:
-            db.collection("attendance").document(roll).set({
-                "Name": name, "Roll": roll, "Status": "Present",
-                "Timestamp": firestore.SERVER_TIMESTAMP
-            })
-            st.success("Attendance Synced!")
-
-    st.divider()
-
-    # Section B: Live Class Notes (Teacher updates this)
-    st.subheader("📖 Live Class Notes")
+    st.header("👤 Student View")
+    st.subheader("📖 Live Class Notes (From Teacher)")
     if db:
-        # Fetching the latest lecture notes from the cloud
+        # Teacher పంపిన లైవ్ నోట్స్ ఇక్కడ కనిపిస్తాయి
         lecture_ref = db.collection("lectures").document("current_session").get()
         if lecture_ref.exists:
-            notes = lecture_ref.to_dict().get("content", "Waiting for teacher to start...")
-            st.info(notes) # ఇక్కడ స్టూడెంట్‌కి టీచర్ నోట్స్ కనిపిస్తాయి
-        else:
-            st.write("No active lecture notes found.")
+            st.info(lecture_ref.to_dict().get("content", "Waiting for teacher..."))
 
-# --- 4. TEACHER CONTROL ---
+# --- TEACHER CONTROL ---
 elif mode == "Teacher Control":
     st.header("🎙️ Teacher Dashboard")
     
-    # Attendance Tracker
-    st.subheader("📋 Live Attendance")
-    if db:
-        docs = db.collection("attendance").stream()
-        attendance_list = [doc.to_dict() for doc in docs]
-        if attendance_list:
-            st.table(pd.DataFrame(attendance_list)[['Name', 'Roll']])
-    
-    st.divider()
-
-    # AI Recording & Transcription
     st.subheader("🎙️ AI Lecture Capture")
-    st.write("Click below to record your lecture:")
+    st.write("మాట్లాడటం అయ్యాక 'Stop' నొక్కండి, అప్పుడు అది టెక్స్ట్‌గా మారుతుంది:")
     
     # Recording Logic
-    audio = mic_recorder(start_prompt="▶️ Start Recording", stop_prompt="🛑 Stop & Sync", key='teacher_mic')
+    audio_data = mic_recorder(start_prompt="▶️ Start Speaking", stop_prompt="🛑 Stop & Convert to Text", key='teacher_mic')
     
-    if audio:
-        # Mocking the AI Transcription for the M.Tech Demo
-        transcription = "AI Transcription: Today we are discussing Cloud Data Sync in AIML projects."
-        st.session_state.lecture_content = transcription
-        
-        # Saving notes to Firestore so Students can see them
-        if db:
-            db.collection("lectures").document("current_session").set({
-                "content": transcription,
-                "timestamp": firestore.SERVER_TIMESTAMP
-            })
-            st.success("Lecture synced to Student Portal!")
+    if audio_data:
+        # టీచర్ మాట్లాడిన వాయిస్‌ని టెక్స్ట్‌గా మార్చే AI లాజిక్
+        recognizer = sr.Recognizer()
+        try:
+            audio_bytes = io.BytesIO(audio_data['bytes'])
+            with sr.AudioFile(audio_bytes) as source:
+                audio = recognizer.record(source)
+                # Convert Speech to Text (English/Telugu support)
+                text = recognizer.recognize_google(audio) 
+                st.session_state.lecture_content = text
+                
+                # Cloud లో సేవ్ చేయడం (స్టూడెంట్ కి పంపడానికి)
+                if db:
+                    db.collection("lectures").document("current_session").set({
+                        "content": text,
+                        "timestamp": firestore.SERVER_TIMESTAMP
+                    })
+                    st.success("Voice successfully converted to text and synced!")
+        except Exception as e:
+            st.error(f"AI could not understand the audio: {e}")
 
-    # Editable area for Teacher
-    final_notes = st.text_area("Final Summary to Students:", value=st.session_state.get('lecture_content', ""))
-    if st.button("Update Students"):
-         if db:
+    # టీచర్ మాట్లాడిన మాటలు ఇక్కడ కనిపిస్తాయి
+    final_notes = st.text_area("Teacher's Voice (Converted to Text):", 
+                               value=st.session_state.get('lecture_content', ""), 
+                               height=150)
+    
+    if st.button("Update to All Students"):
+        if db:
             db.collection("lectures").document("current_session").update({"content": final_notes})
-            st.success("Notes Updated for Students!")
+            st.success("Updated Successfully!")
