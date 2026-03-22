@@ -5,21 +5,22 @@ from google.oauth2 import service_account
 # --- SECURE FIREBASE CONNECTION ---
 @st.cache_resource
 def init_db():
+    """
+    Rectifies formatting errors in the RSA Private Key and 
+    establishes a secure connection to Firestore.
+    """
     try:
         if "firebase" in st.secrets:
-            # Secrets ని డిక్షనరీ లోకి తీసుకోవడం
             info = dict(st.secrets["firebase"])
             
-            # కీ లో ఉన్న స్లాష్ లని సరిచేయడం (PEM Error Fix)
             if "private_key" in info:
-                # Replace double backslashes and ensure correct newline formatting
+                # FIX: Rectifying the literal string to actual newline characters
                 info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
             
-            # Authenticating with Google Cloud
             creds = service_account.Credentials.from_service_account_info(info)
             return firestore.Client(credentials=creds, project=creds.project_id)
     except Exception as e:
-        # If any error occurs, it will be displayed here
+        # Error rectification feedback
         st.error(f"❌ Connection Error: {e}")
     return None
 
