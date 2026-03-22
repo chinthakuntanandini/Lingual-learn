@@ -1,6 +1,3 @@
 streamlit
 deep-translator
-gtts
 google-cloud-firestore
-google-oauth2
-SpeechRecognition
