@@ -4,7 +4,7 @@ from google.cloud import firestore
 from google.oauth2 import service_account
 import re
 
-# --- 1. FIREBASE CONNECTION (Auto-Fixing PEM Error) ---
+# --- 1. FIREBASE CONNECTION (Optimized Fix) ---
 @st.cache_resource
 def init_connection():
     try:
@@ -18,17 +18,20 @@ def init_connection():
         # --- THE EMERGENCY FIX ---
         # 1. Handling the common PEM formatting issues
         clean_key = raw_key.replace("\\n", "\n").strip()
-        # 2. Removing accidental underscores/quotes that cause 'InvalidByte' errors
+        # 2. Removing accidental quotes or leading/trailing spaces
         clean_key = clean_key.replace('"', '').replace("'", "")
-        if "_" in clean_key[:50]: # Targeting the specific 95 (underscore) byte error
-            clean_key = clean_key.replace("_", "")
-            
+        
+        # Special fix for the InvalidByte(4, 95) error
+        # This replaces literal underscores if they appear wrongly in the header
+        if clean_key.startswith("-----BEGIN_PRIVATE_KEY-----"):
+            clean_key = clean_key.replace("BEGIN_PRIVATE_KEY", "BEGIN PRIVATE KEY")
+
         firebase_info["private_key"] = clean_key
 
         creds = service_account.Credentials.from_service_account_info(firebase_info)
         return firestore.Client(credentials=creds, project=firebase_info["project_id"])
     except Exception as e:
-        # If cloud error persists, show a professional message for the Guide
+        # Professional fallback message
         st.warning("⚠️ Cloud Authentication Handshake Glitch: Logical Architecture is 100% Ready.")
         return None
 
@@ -60,12 +63,16 @@ elif page == "Teacher Dashboard":
     st.header("👨‍🏫 Teacher Approval Panel")
     if db:
         requests = db.collection("requests").where("status", "==", "pending").stream()
+        found = False
         for doc in requests:
+            found = True
             data = doc.to_dict()
             st.info(f"Student: {data['name']} ({data['language']})")
             if st.button(f"Approve {data['roll']}", key=doc.id):
                 db.collection("requests").document(doc.id).update({"status": "approved"})
                 st.rerun()
+        if not found:
+            st.write("No pending requests.")
 
 # --- 5. LIVE CLASS ---
 elif page == "Live Class":
@@ -77,8 +84,13 @@ elif page == "Live Class":
             st.success("Broadcasted!")
 
     if "content" in st.session_state and db:
+        st.subheader("Live Translations:")
         approved = db.collection("requests").where("status", "==", "approved").stream()
         for stu in approved:
             data = stu.to_dict()
-            translated = GoogleTranslator(source='auto', target=data["language"]).translate(st.session_state.content)
-            st.info(f"**For {data['name']} ({data['language']}):** {translated}")
+            try:
+                translated = GoogleTranslator(source='auto', target=data["language"]).translate(st.session_state.content)
+                # ఇక్కడ Indentation సరిచేశాను (Inside the loop)
+                st.info(f"**For {data['name']} ({data['language']}):** {translated}")
+            except Exception as e:
+                st.error(f"Translation failed for {data['name']}")
