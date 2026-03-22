@@ -2,6 +2,7 @@ import streamlit as st
 from googletrans import Translator
 from gtts import gTTS
 import tempfile
+from fpdf import FPDF
 
 translator = Translator()
 
@@ -63,7 +64,7 @@ elif page == "Teacher Dashboard":
 elif page == "Live Class":
     st.header("📚 Live Class")
 
-    # Teacher text input (Cloud safe)
+    # Teacher input
     content = st.text_input("Enter Class Content")
 
     if st.button("Send Class"):
@@ -90,7 +91,7 @@ elif page == "Live Class":
                 dest=stu["language"]
             )
 
-            st.write(f"{stu['name']} → {translated.text}")
+            st.write(f"👨‍🎓 {stu['name']} → {translated.text}")
 
             # 🔊 Audio
             tts = gTTS(translated.text, lang=stu["language"])
@@ -98,3 +99,38 @@ elif page == "Live Class":
             tts.save(temp_file.name)
 
             st.audio(temp_file.name)
+
+    # ---------------- PDF SECTION ----------------
+
+    st.markdown("---")
+    st.subheader("📄 Download Reports")
+
+    # Class PDF
+    if st.button("Download Class PDF"):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+
+        pdf.cell(200, 10, txt="Class Notes", ln=True)
+        pdf.multi_cell(0, 10, st.session_state.class_content)
+
+        pdf.output("class_notes.pdf")
+
+        with open("class_notes.pdf", "rb") as f:
+            st.download_button("Download Class PDF", f, file_name="class_notes.pdf")
+
+    # Attendance PDF
+    if st.button("Download Attendance PDF"):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+
+        pdf.cell(200, 10, txt="Attendance List", ln=True)
+
+        for stu in st.session_state.approved:
+            pdf.cell(200, 10, txt=f"{stu['name']} - {stu['roll']}", ln=True)
+
+        pdf.output("attendance.pdf")
+
+        with open("attendance.pdf", "rb") as f:
+            st.download_button("Download Attendance", f, file_name="attendance.pdf")
