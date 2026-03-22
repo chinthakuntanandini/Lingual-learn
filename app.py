@@ -3,18 +3,28 @@ from googletrans import Translator
 from gtts import gTTS
 import tempfile
 from fpdf import FPDF
+import pandas as pd
+import speech_recognition as sr
+
+# Firebase
+from google.cloud import firestore
+from google.oauth2 import service_account
 
 translator = Translator()
 
-# ---------------- STORAGE ----------------
-if "requests" not in st.session_state:
-    st.session_state.requests = []
+# ---------------- FIREBASE CONNECTION ----------------
+@st.cache_resource
+def init_connection():
+    firebase_info = st.secrets["firebase"]
+    private_key = firebase_info["private_key"].replace("\\n", "\n")
 
-if "approved" not in st.session_state:
-    st.session_state.approved = []
+    creds_dict = dict(firebase_info)
+    creds_dict["private_key"] = private_key
 
-if "class_content" not in st.session_state:
-    st.session_state.class_content = ""
+    creds = service_account.Credentials.from_service_account_info(creds_dict)
+    return firestore.Client(credentials=creds)
+
+db = init_connection()
 
 # ---------------- UI ----------------
 st.set_page_config(page_title="NeuralBridge AI", layout="wide")
@@ -23,114 +33,172 @@ page = st.sidebar.selectbox("Go to", ["Student Join", "Teacher Dashboard", "Live
 
 st.title("🎓 NeuralBridge: AI Smart Classroom")
 
+lang_map = {"te": "Telugu", "ur": "Urdu", "en": "English"}
+
 # ---------------- STUDENT ----------------
 if page == "Student Join":
     st.header("Student Registration")
 
     name = st.text_input("Enter Name")
-    roll = st.text_input("Enter Roll No")
-    lang = st.selectbox("Select Language", ["te", "hi", "en", "ta"])
+    roll = st.text_input("Enter Roll Number")
+
+    lang = st.selectbox("Select Language", {
+        "Telugu": "te",
+        "Urdu": "ur",
+        "English": "en"
+    })
 
     if st.button("Join"):
         if name and roll:
-            st.session_state.requests.append({
+            db.collection("requests").document(roll).set({
                 "name": name,
                 "roll": roll,
-                "language": lang
+                "language": lang,
+                "status": "pending"
             })
-            st.success("Request Sent!")
-            st.rerun()
+            st.success("Request Sent to Teacher!")
         else:
-            st.warning("Enter details")
+            st.warning("Enter all details")
 
 # ---------------- TEACHER ----------------
 elif page == "Teacher Dashboard":
-    st.header("Teacher Panel")
+    st.header("Teacher Approval Panel")
 
-    if len(st.session_state.requests) == 0:
-        st.info("No requests")
-    else:
-        for i, req in enumerate(st.session_state.requests):
-            col1, col2 = st.columns([3,1])
-            with col1:
-                st.write(f"{req['name']} ({req['roll']}) - {req['language']}")
-            with col2:
-                if st.button("Approve", key=i):
-                    st.session_state.approved.append(req)
-                    st.session_state.requests.remove(req)
-                    st.rerun()
+    requests = db.collection("requests").where("status", "==", "pending").stream()
+
+    found = False
+    for doc in requests:
+        found = True
+        data = doc.to_dict()
+
+        col1, col2 = st.columns([3,1])
+        with col1:
+            st.write(f"{data['name']} ({data['roll']}) - {lang_map[data['language']]}")
+        with col2:
+            if st.button("Approve", key=doc.id):
+                db.collection("requests").document(doc.id).update({
+                    "status": "approved"
+                })
+                st.rerun()
+
+    if not found:
+        st.info("No pending requests")
 
 # ---------------- LIVE CLASS ----------------
 elif page == "Live Class":
-    st.header("📚 Live Class")
+    st.header("🎤 Voice Enabled Smart Class")
 
-    # Teacher input
-    content = st.text_input("Enter Class Content")
+    st.subheader("Upload Teacher Voice (.wav)")
 
-    if st.button("Send Class"):
-        st.session_state.class_content = content
-        st.success("Class Updated!")
-        st.rerun()
+    uploaded_file = st.file_uploader("Upload Voice File", type=["wav"])
 
-    st.subheader("Students")
+    if uploaded_file is not None:
+        with tempfile.NamedTemporaryFile(delete=False) as temp_audio:
+            temp_audio.write(uploaded_file.read())
+            temp_path = temp_audio.name
 
-    if len(st.session_state.approved) == 0:
-        st.warning("No students approved yet")
-    else:
-        for stu in st.session_state.approved:
-            st.write(f"{stu['name']} ({stu['language']})")
+        r = sr.Recognizer()
+        with sr.AudioFile(temp_path) as source:
+            audio = r.record(source)
+
+            try:
+                text = r.recognize_google(audio)
+                st.session_state.class_content = text
+                st.success("Voice converted to text!")
+                st.write("📚 Text:", text)
+            except:
+                st.error("Could not recognize audio")
 
     st.markdown("---")
 
-    st.subheader("🌐 Translated Content + Audio")
+    # Students
+    st.subheader("👨‍🎓 Students")
 
-    if st.session_state.class_content != "":
-        for stu in st.session_state.approved:
+    approved = db.collection("requests").where("status", "==", "approved").stream()
+
+    students = []
+    for doc in approved:
+        data = doc.to_dict()
+        students.append(data)
+        st.write(f"{data['name']} ({lang_map[data['language']]})")
+
+    if len(students) == 0:
+        st.warning("No students approved yet")
+
+    st.markdown("---")
+
+    # ---------------- OUTPUT ----------------
+    if "class_content" in st.session_state:
+        st.subheader("🌐 Translated Content + Audio")
+
+        for stu in students:
             translated = translator.translate(
                 st.session_state.class_content,
                 dest=stu["language"]
             )
 
-            st.write(f"👨‍🎓 {stu['name']} → {translated.text}")
+            st.write(f"{stu['name']} → {translated.text}")
 
-            # 🔊 Audio
             tts = gTTS(translated.text, lang=stu["language"])
             temp_file = tempfile.NamedTemporaryFile(delete=False)
             tts.save(temp_file.name)
 
             st.audio(temp_file.name)
 
-    # ---------------- PDF SECTION ----------------
+        # ---------------- TABLE ----------------
+        st.subheader("📊 Class Table")
 
-    st.markdown("---")
-    st.subheader("📄 Download Reports")
+        table_data = {
+            "Topic": [st.session_state.class_content],
+            "Students Count": [len(students)],
+            "Languages Used": [", ".join(set([s["language"] for s in students]))]
+        }
 
-    # Class PDF
-    if st.button("Download Class PDF"):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        df = pd.DataFrame(table_data)
+        st.table(df)
 
-        pdf.cell(200, 10, txt="Class Notes", ln=True)
-        pdf.multi_cell(0, 10, st.session_state.class_content)
+        # ---------------- CHART ----------------
+        st.subheader("📈 Diagram")
 
-        pdf.output("class_notes.pdf")
+        chart_data = {
+            "Languages": ["Telugu", "Urdu", "English"],
+            "Students": [
+                sum(1 for s in students if s["language"] == "te"),
+                sum(1 for s in students if s["language"] == "ur"),
+                sum(1 for s in students if s["language"] == "en")
+            ]
+        }
 
-        with open("class_notes.pdf", "rb") as f:
-            st.download_button("Download Class PDF", f, file_name="class_notes.pdf")
+        chart_df = pd.DataFrame(chart_data)
+        st.bar_chart(chart_df.set_index("Languages"))
 
-    # Attendance PDF
-    if st.button("Download Attendance PDF"):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        # ---------------- PDF ----------------
+        st.subheader("📄 Download Reports")
 
-        pdf.cell(200, 10, txt="Attendance List", ln=True)
+        if st.button("Download Class PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
 
-        for stu in st.session_state.approved:
-            pdf.cell(200, 10, txt=f"{stu['name']} - {stu['roll']}", ln=True)
+            pdf.cell(200, 10, txt="Class Notes", ln=True)
+            pdf.multi_cell(0, 10, st.session_state.class_content)
 
-        pdf.output("attendance.pdf")
+            pdf.output("class_notes.pdf")
 
-        with open("attendance.pdf", "rb") as f:
-            st.download_button("Download Attendance", f, file_name="attendance.pdf")
+            with open("class_notes.pdf", "rb") as f:
+                st.download_button("Download Class PDF", f)
+
+        if st.button("Download Attendance PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+
+            pdf.cell(200, 10, txt="Attendance", ln=True)
+
+            for stu in students:
+                pdf.cell(200, 10, txt=f"{stu['name']} - {stu['roll']}", ln=True)
+
+            pdf.output("attendance.pdf")
+
+            with open("attendance.pdf", "rb") as f:
+                st.download_button("Download Attendance PDF", f)
