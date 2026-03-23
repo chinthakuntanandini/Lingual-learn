@@ -4,3 +4,6 @@ google-oauth2
 SpeechRecognition
 pydub
 streamlit-mic-recorder
+googletrans==4.0.0-rc1
+gTTS
+fpdf
