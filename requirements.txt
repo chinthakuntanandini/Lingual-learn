@@ -1,9 +1,9 @@
 streamlit
+pandas
 google-cloud-firestore
-google-oauth2
-SpeechRecognition
-pydub
+google-auth
 streamlit-mic-recorder
+SpeechRecognition
 googletrans==4.0.0-rc1
 gTTS
 fpdf2
