@@ -10,27 +10,33 @@ from fpdf import FPDF
 import io
 import re
 
-# --- 1. FIREBASE CONNECTION ---
+# --- 1. FIREBASE CONNECTION ENGINE ---
 @st.cache_resource
 def init_db():
+    """Establishes connection to Firebase Firestore using Streamlit Secrets."""
     try:
         if "firebase" in st.secrets:
+            # Load credentials from streamlit secrets
             info = dict(st.secrets["firebase"])
-            info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
+            # Essential: Strip extra spaces and ensure correct PEM format for the Private Key
+            info["private_key"] = info["private_key"].strip().replace("\\n", "\n")
+            
             creds = service_account.Credentials.from_service_account_info(info)
             return firestore.Client(credentials=creds, project=info["project_id"])
     except Exception as e:
+        # If the PEM file or connection fails, show the error here
         st.error(f"Firebase Config Error: {e}")
     return None
 
 db = init_db()
 
-# Translator initialize (Safe way to avoid connection errors)
+# Initialize Google Translator in Session State
 if 'translator' not in st.session_state:
     st.session_state.translator = Translator()
 
-# --- 2. PDF GENERATION ENGINE (Using FPDF) ---
+# --- 2. UTILITY FUNCTIONS ---
 def create_pdf(title, content_list):
+    """Generates a PDF document from a list of strings."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
@@ -39,42 +45,33 @@ def create_pdf(title, content_list):
     pdf.set_font("Arial", size=12)
     for line in content_list:
         pdf.multi_cell(0, 10, txt=str(line))
-    # Return as bytes
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 3. UI NAVIGATION & STYLING ---
+# --- 3. UI LAYOUT ---
 st.set_page_config(page_title="NeuralBridge AI", layout="wide")
 st.sidebar.title("🎓 NeuralBridge AI")
 choice = st.sidebar.radio("Navigation", ["Student Portal", "Teacher Dashboard"])
 
-# --- 4. TEACHER DASHBOARD ---
+# --- 4. TEACHER DASHBOARD (ADMIN) ---
 if choice == "Teacher Dashboard":
     st.header("🎙️ Teacher Command Center")
     
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("🔊 Live Lecture Capture")
-        # Mic recorder for teacher
+        # Records audio from browser microphone
         audio = mic_recorder(start_prompt="▶️ Start Recording", stop_prompt="🛑 Stop & Process", key='teacher_mic')
         
         if audio:
             recognizer = sr.Recognizer()
             try:
+                # Convert recorded bytes to an audio file object
                 with sr.AudioFile(io.BytesIO(audio['bytes'])) as source:
                     audio_data = recognizer.record(source)
-                    text = recognizer.recognize_google(audio_data)
+                    # Convert Voice to Text (English - India accent)
+                    text = recognizer.recognize_google(audio_data, language='en-IN')
                     st.session_state.master_notes = text
-                    
-                    # Logic for Table detection (e.g., "Maths: 90")
-                    table_pairs = dict(re.findall(r"(\w+)\s*[:]\s*(\d+)", text))
-                    
-                    if db:
-                        db.collection("session").document("live").set({
-                            "notes": text,
-                            "table": table_pairs,
-                            "active": True
-                        })
-                        st.success("Lecture synced to Cloud!")
+                    st.success("Voice successfully converted to text!")
             except Exception as e:
                 st.error("Audio processing failed. Please speak clearly.")
 
@@ -82,41 +79,44 @@ if choice == "Teacher Dashboard":
         st.subheader("🖼️ Diagram Upload")
         img_file = st.file_uploader("Upload Class Diagram", type=['jpg', 'png', 'jpeg'])
         if img_file:
-            st.image(img_file, caption="Live Diagram", width=300)
+            st.image(img_file, caption="Live Class Diagram", width=300)
 
-    st.text_area("Current Transcript:", value=st.session_state.get('master_notes', ""), height=150)
+    # Display and Edit the Transcript
+    st.subheader("📝 Current Transcript")
+    lecture_text = st.text_area("Review your lecture notes:", value=st.session_state.get('master_notes', ""), height=150)
+    
+    # --- TABLE EXTRACTION LOGIC ---
+    # Automatically finds patterns like 'Maths: 90' or 'Rice: 50'
+    table_items = re.findall(r"(\w+)\s*[:]\s*(\d+)", lecture_text)
+    if table_items:
+        st.info("📊 Data Table detected from voice!")
+        df = pd.DataFrame(table_items, columns=["Item", "Value"])
+        st.table(df)
 
     st.divider()
-    st.subheader("📤 Post-Class Distribution")
-    c1, c2 = st.columns(2)
     
-    with c1:
-        if st.button("📢 Publish Class Notes"):
-            notes = st.session_state.get('master_notes', "No content recorded.")
-            if db:
-                db.collection("delivery").document("notes").set({"ready": True, "data": notes})
-                st.success("Notes published for students!")
+    # Sync with Firebase Cloud
+    if st.button("📢 Sync & Publish to Students"):
+        if db and lecture_text:
+            db.collection("session").document("live").set({
+                "notes": lecture_text,
+                "table": dict(table_items),
+                "active": True
+            })
+            st.success("Lecture shared with students via Cloud!")
 
-    with c2:
-        if st.button("📝 Publish Attendance Report"):
-            if db:
-                docs = db.collection("attendance").stream()
-                att_list = [f"{d.to_dict()['Name']} (Roll: {d.to_dict()['Roll']})" for d in docs]
-                if att_list:
-                    db.collection("delivery").document("attendance").set({"ready": True, "list": att_list})
-                    st.success("Attendance PDF generated!")
-
-# --- 5. STUDENT PORTAL ---
+# --- 5. STUDENT PORTAL (USER) ---
 else:
     st.header("👤 Student Portal")
     
-    # Login / Attendance
+    # Attendance / Verification Logic
     if 'verified' not in st.session_state:
         with st.form("Student_Login"):
             s_name = st.text_input("Enter Your Full Name")
             s_roll = st.text_input("Enter Roll Number")
             if st.form_submit_button("Join Class"):
                 if s_name and s_roll and db:
+                    # Save attendance to Firebase
                     db.collection("attendance").document(s_roll).set({"Name": s_name, "Roll": s_roll})
                     st.session_state.verified = True
                     st.session_state.student_name = s_name
@@ -124,45 +124,40 @@ else:
     else:
         st.success(f"Verified: {st.session_state.student_name}")
         
-        # Multilingual Support
+        # Translation Options
         lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi"}
-        target_lang = st.selectbox("Select Language to View Notes:", list(lang_map.keys()))
+        target_lang = st.selectbox("Translate Notes To:", list(lang_map.keys()))
 
         if db:
+            # Fetch live data from Firestore
             live_ref = db.collection("session").document("live").get()
             if live_ref.exists:
                 raw_text = live_ref.to_dict().get("notes", "")
                 
-                # Translation logic
+                # Translation Engine
                 if target_lang != "English":
                     try:
                         translated = st.session_state.translator.translate(raw_text, dest=lang_map[target_lang]).text
                     except:
-                        translated = raw_text # Fallback
+                        translated = raw_text # Fallback to original if translation fails
                 else:
                     translated = raw_text
 
-                st.info(f"**Live Notes ({target_lang}):**\n\n{translated}")
+                st.info(f"**Lecture Content ({target_lang}):**\n\n{translated}")
                 
-                # Text-to-Speech (Audio Output)
-                if st.button("🔊 Play Voice Note"):
+                # Voice Playback (Text-to-Speech)
+                if st.button("🔊 Listen to Notes"):
                     tts = gTTS(text=translated, lang=lang_map[target_lang])
                     audio_fp = io.BytesIO()
                     tts.write_to_fp(audio_fp)
                     st.audio(audio_fp)
 
         st.divider()
-        st.subheader("📂 Official Downloads")
+        st.subheader("📥 Downloads")
         
-        if db:
-            # Download Notes
-            n_ref = db.collection("delivery").document("notes").get()
-            if n_ref.exists and n_ref.to_dict().get("ready"):
-                n_pdf = create_pdf("Official Class Notes", [n_ref.to_dict()['data']])
-                st.download_button("📥 Download Notes PDF", n_pdf, "Class_Notes.pdf")
-
-            # Download Attendance
-            a_ref = db.collection("delivery").document("attendance").get()
-            if a_ref.exists and a_ref.to_dict().get("ready"):
-                a_pdf = create_pdf("Final Attendance Sheet", a_ref.to_dict()['list'])
-                st.download_button("📥 Download Attendance PDF", a_pdf, "Attendance_Sheet.pdf")
+        # Logic to generate PDF from Firebase data
+        if st.button("Generate Report PDF"):
+            if db:
+                notes_data = db.collection("session").document("live").get().to_dict().get("notes", "Empty")
+                pdf_bytes = create_pdf("NeuralBridge Lecture Summary", [notes_data])
+                st.download_button("Click here to Download", pdf_bytes, "Lecture_Notes.pdf")
