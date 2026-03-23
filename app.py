@@ -64,12 +64,13 @@ if choice == "Teacher Dashboard":
                 table_dict = dict(table_pairs) if table_pairs else {}
                 
                 # Sync to Cloud
-                db.collection("session").document("live").set({
-                    "notes": text,
-                    "table": table_dict,
-                    "active": True
-                })
-                st.success("Lecture & Table Synced!")
+                if db:
+                    db.collection("session").document("live").set({
+                        "notes": text,
+                        "table": table_dict,
+                        "active": True
+                    })
+                    st.success("Lecture & Table Synced!")
 
     with col2:
         st.subheader("🖼️ Diagram Upload")
@@ -86,16 +87,18 @@ if choice == "Teacher Dashboard":
     with c1:
         if st.button("📢 Publish Class Notes PDF"):
             content = st.session_state.get('master_notes', "No content recorded.")
-            db.collection("delivery").document("notes").set({"ready": True, "data": content})
-            st.success("Notes PDF sent to Students!")
+            if db:
+                db.collection("delivery").document("notes").set({"ready": True, "data": content})
+                st.success("Notes PDF sent to Students!")
 
     with c2:
         if st.button("📝 Publish Attendance PDF"):
-            docs = db.collection("attendance").stream()
-            att_list = [f"{d.to_dict()['Name']} (Roll: {d.to_dict()['Roll']})" for d in docs]
-            if att_list:
-                db.collection("delivery").document("attendance").set({"ready": True, "list": att_list})
-                st.success("Attendance PDF sent to Students!")
+            if db:
+                docs = db.collection("attendance").stream()
+                att_list = [f"{d.to_dict()['Name']} (Roll: {d.to_dict()['Roll']})" for d in docs]
+                if att_list:
+                    db.collection("delivery").document("attendance").set({"ready": True, "list": att_list})
+                    st.success("Attendance PDF sent to Students!")
 
 # --- 5. STUDENT PORTAL ---
 elif choice == "Student Portal":
@@ -107,7 +110,7 @@ elif choice == "Student Portal":
             s_name = st.text_input("Full Name")
             s_roll = st.text_input("Roll Number")
             if st.form_submit_button("Join Class"):
-                if s_name and s_roll:
+                if s_name and s_roll and db:
                     db.collection("attendance").document(s_roll).set({"Name": s_name, "Roll": s_roll})
                     st.session_state.verified = True
                     st.session_state.student_name = s_name
@@ -120,31 +123,33 @@ elif choice == "Student Portal":
         sel_lang = st.selectbox("Select View Language:", list(lang_opt.keys()))
 
         # Display Live Data
-        live_ref = db.collection("session").document("live").get()
-        if live_ref.exists:
-            raw_text = live_ref.to_dict().get("notes", "")
-            # Translation for View
-            disp_text = translator.translate(raw_text, dest=lang_opt[sel_lang]).text if sel_lang != "English" else raw_text
-            
-            st.info(f"**Live Notes ({sel_lang}):**\n{disp_text}")
-            
-            if st.button("🔊 Play Voice"):
-                tts = gTTS(text=disp_text, lang=lang_opt[sel_lang])
-                audio_fp = io.BytesIO()
-                tts.write_to_fp(audio_fp)
-                st.audio(audio_fp)
+        if db:
+            live_ref = db.collection("session").document("live").get()
+            if live_ref.exists:
+                raw_text = live_ref.to_dict().get("notes", "")
+                # Translation for View
+                disp_text = translator.translate(raw_text, dest=lang_opt[sel_lang]).text if sel_lang != "English" else raw_text
+                
+                st.info(f"**Live Notes ({sel_lang}):**\n{disp_text}")
+                
+                if st.button("🔊 Play Voice"):
+                    tts = gTTS(text=disp_text, lang=lang_opt[sel_lang])
+                    audio_fp = io.BytesIO()
+                    tts.write_to_fp(audio_fp)
+                    st.audio(audio_fp)
 
         st.divider()
         st.subheader("📂 Download Official Documents (English)")
 
-        # Download Notes PDF
-        n_ref = db.collection("delivery").document("notes").get()
-        if n_ref.exists and n_ref.to_dict().get("ready"):
-            n_pdf = create_pdf("Official Class Notes", [n_ref.to_dict()['data']])
-            st.download_button("📥 Download Class Notes PDF", data=n_pdf, file_name="Class_Notes.pdf")
+        if db:
+            # Download Notes PDF
+            n_ref = db.collection("delivery").document("notes").get()
+            if n_ref.exists and n_ref.to_dict().get("ready"):
+                n_pdf = create_pdf("Official Class Notes", [n_ref.to_dict()['data']])
+                st.download_button("📥 Download Class Notes PDF", data=n_pdf, file_name="Class_Notes.pdf")
 
-        # Download Attendance PDF
-        a_ref = db.collection("delivery").document("attendance").get()
-        if a_ref.exists and a_ref.to_dict().get("ready"):
-            a_pdf = create_pdf("Final Attendance Report", a_ref.to_dict()['list'])
-            st.download_button("📥 Download Attendance PDF", data=a_pdf, file_name="Attendance.pdf")
+            # Download Attendance PDF
+            a_ref = db.collection("delivery").document("attendance").get()
+            if a_ref.exists and a_ref.to_dict().get("ready"):
+                a_pdf = create_pdf("Final Attendance Report", a_ref.to_dict()['list'])
+                st.download_button("📥 Download Attendance PDF", data=a_pdf, file_name="Attendance.pdf")
