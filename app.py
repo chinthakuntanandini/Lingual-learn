@@ -18,6 +18,7 @@ import speech_recognition as sr
 def _normalize_private_key(raw_key: str) -> str:
     key = (raw_key or "").strip().strip('"').strip("'")
     key = key.replace("\\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
+    # Trim accidental leading/trailing spaces per line.
     key = "\n".join(line.strip() for line in key.split("\n"))
     return key
 
@@ -42,6 +43,7 @@ def init_db():
 
         info["private_key"] = _normalize_private_key(info.get("private_key", ""))
 
+        # Quick validation before creating credentials.
         key = info.get("private_key", "")
         if not key.startswith("-----BEGIN PRIVATE KEY-----"):
             st.error(f"Firebase key format invalid from {source}: missing BEGIN marker.")
@@ -87,7 +89,6 @@ st.sidebar.title("🎓 NeuralBridge AI")
 choice = st.sidebar.radio("Navigation", ["Student Portal", "Teacher Dashboard"])
 
 db = init_db()
-
 if "translator" not in st.session_state:
     st.session_state.translator = Translator()
 if "master_notes" not in st.session_state:
@@ -158,9 +159,34 @@ if choice == "Teacher Dashboard":
         else:
             st.warning("Please enter notes before publishing.")
 
+    st.divider()
+    st.subheader("👥 Live Attendance (Joined Students)")
+    if db:
+        try:
+            attendance_docs = db.collection("attendance").stream()
+            attendance_rows = []
+            for doc in attendance_docs:
+                data = doc.to_dict() or {}
+                attendance_rows.append(
+                    {
+                        "Roll No": data.get("Roll", doc.id),
+                        "Name": data.get("Name", "N/A"),
+                    }
+                )
+
+            if attendance_rows:
+                att_df = pd.DataFrame(attendance_rows).drop_duplicates(subset=["Roll No"], keep="last")
+                st.dataframe(att_df, use_container_width=True)
+                st.success(f"Total Present: {len(att_df)}")
+            else:
+                st.info("No students joined yet.")
+        except Exception as e:
+            st.error(f"Failed to load attendance: {e}")
+    else:
+        st.error("Database is not connected.")
+
 else:
     st.header("👤 Student Portal")
-
     if "verified" not in st.session_state:
         with st.form("Student_Login"):
             s_name = st.text_input("Name")
@@ -168,27 +194,20 @@ else:
             submitted = st.form_submit_button("Join")
             if submitted:
                 if s_name and s_roll and db:
-                    db.collection("attendance").document(s_roll).set(
-                        {"Name": s_name, "Roll": s_roll}
-                    )
+                    db.collection("attendance").document(s_roll).set({"Name": s_name, "Roll": s_roll})
                     st.session_state.verified = True
                     st.session_state.student_name = s_name
                     st.rerun()
                 elif not db:
                     st.error("Database is not connected.")
-                else:
-                    st.warning("Enter Name and Roll No.")
     else:
         st.success(f"Verified: {st.session_state.student_name}")
-        lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi", "Tamil": "ta"}
+        lang_map = {"English": "en","Telugu": "te",  "Urdu": "ur", "Hindi": "hi",}
         target_lang = st.selectbox("Translate to:", list(lang_map.keys()))
         target_code = lang_map[target_lang]
-
         st.button("🔄 Refresh Live Notes")
 
         translated = ""
-        raw_text = ""
-
         if db:
             try:
                 live_ref = db.collection("session").document("live").get()
@@ -201,9 +220,7 @@ else:
                     if is_active and raw_text.strip():
                         if target_lang != "English":
                             try:
-                                translated = st.session_state.translator.translate(
-                                    raw_text, dest=target_code
-                                ).text
+                                translated = st.session_state.translator.translate(raw_text, dest=target_code).text
                             except Exception:
                                 translated = raw_text
                         else:
@@ -229,11 +246,7 @@ else:
         st.divider()
         if st.button("📥 Download PDF Report"):
             if db:
-                notes = translated if translated else raw_text
+                notes_doc = db.collection("session").document("live").get()
+                notes = notes_doc.to_dict().get("notes", "") if notes_doc.exists else ""
                 pdf_bytes = create_pdf("NeuralBridge Report", notes, lang_code=target_code)
-                st.download_button(
-                    "Download Now",
-                    pdf_bytes,
-                    "Lecture_Notes.pdf",
-                    mime="application/pdf",
-                )
+                st.download_button("Download Now", pdf_bytes, "Lecture_Notes.pdf", mime="application/pdf")
