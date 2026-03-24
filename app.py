@@ -9,48 +9,62 @@ from gtts import gTTS
 from fpdf import FPDF
 import io
 import re
+import os
 
 # --- 1. DATABASE CONNECTION (FIREBASE) ---
 @st.cache_resource
 def init_db():
-    """Connects to Firestore using Streamlit Secrets. Handles PEM format errors."""
+    """Connects to Firestore. Handles the Private Key PEM format fix."""
     try:
         if "firebase" in st.secrets:
-            # Load credentials from secrets
             info = dict(st.secrets["firebase"])
-            
-            # CRITICAL FIX: Ensure the private key handles newlines correctly
-            # This fixes the 'InvalidData(InvalidByte)' PEM error
-            info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
+            # Clean the private key to prevent the 'InvalidByte' error
+            key = info["private_key"].replace("\\n", "\n").strip().strip('"')
+            info["private_key"] = key
             
             creds = service_account.Credentials.from_service_account_info(info)
             return firestore.Client(credentials=creds, project=info["project_id"])
     except Exception as e:
-        # Displays the exact error if connection fails
         st.error(f"Firebase Connection Error: {e}")
     return None
 
 db = init_db()
 
-# Initialize Translator in Session State to avoid re-loading
+# Initialize Translator
 if 'translator' not in st.session_state:
     st.session_state.translator = Translator()
 
-# --- 2. PDF GENERATION LOGIC ---
-def create_pdf(title, content_list):
-    """Creates a simple PDF file from lecture notes."""
+# --- 2. MULTILINGUAL PDF LOGIC ---
+def create_pdf(title, content, lang_code='en'):
+    """Generates PDF using the .ttf fonts in your GitHub repo."""
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
+    
+    # Path to fonts in your repository
+    font_files = {
+        "te": "NotoSansTelugu-Regular.ttf",
+        "hi": "NotoSansDevanagari-Regular.ttf",
+        "ta": "NotoSansTamil-Regular.ttf"
+    }
+    
+    try:
+        if lang_code in font_files and os.path.exists(font_files[lang_code]):
+            # Loading your specific .ttf file for Unicode support
+            pdf.add_font('CustomFont', '', font_files[lang_code], uni=True)
+            pdf.set_font('CustomFont', '', 12)
+        else:
+            # Fallback to standard font if file is missing or language is English
+            pdf.set_font("Arial", size=12)
+    except:
+        pdf.set_font("Arial", size=12)
+
     pdf.cell(200, 10, txt=title, ln=1, align='C')
     pdf.ln(10)
-    pdf.set_font("Arial", size=12)
-    for line in content_list:
-        # Multi_cell handles long text wrapping
-        pdf.multi_cell(0, 10, txt=str(line))
-    return pdf.output(dest='S').encode('latin-1')
+    pdf.multi_cell(0, 10, txt=str(content))
+    
+    return pdf.output(dest='S').encode('latin-1', errors='replace')
 
-# --- 3. PAGE NAVIGATION ---
+# --- 3. PAGE CONFIGURATION ---
 st.set_page_config(page_title="NeuralBridge AI", layout="wide")
 st.sidebar.title("🎓 NeuralBridge AI")
 choice = st.sidebar.radio("Navigation", ["Student Portal", "Teacher Dashboard"])
@@ -63,24 +77,21 @@ if choice == "Teacher Dashboard":
     
     with col1:
         st.subheader("🔊 Live Lecture Capture")
-        # Record audio from the browser
         audio = mic_recorder(start_prompt="▶️ Start Recording", stop_prompt="🛑 Stop & Process", key='teacher_mic')
         
         if audio:
             recognizer = sr.Recognizer()
             try:
-                # Process audio bytes
                 audio_file = io.BytesIO(audio['bytes'])
                 with sr.AudioFile(audio_file) as source:
-                    # IMPROVEMENT: Noise adjustment for clearer speech recognition
                     recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     audio_data = recognizer.record(source)
-                    # Convert Voice to Text
+                    # Voice to Text (English-India)
                     text = recognizer.recognize_google(audio_data, language='en-IN')
                     st.session_state.master_notes = text
-                    st.success("Voice Captured Successfully!")
+                    st.success("Voice Captured!")
             except Exception as e:
-                st.error(f"Audio Error: {e}. Please speak clearly and check your mic.")
+                st.error(f"Audio processing failed: {e}")
 
     with col2:
         st.subheader("🖼️ Diagram Upload")
@@ -88,57 +99,51 @@ if choice == "Teacher Dashboard":
         if img_file:
             st.image(img_file, caption="Live Diagram", width=300)
 
-    # --- TRANSCRIPT & TABLE LOGIC ---
     st.divider()
     st.subheader("📝 Current Transcript")
-    # Show the text area for editing or viewing recorded notes
-    current_notes = st.text_area("Review Lecture Content:", value=st.session_state.get('master_notes', ""), height=150)
+    current_notes = st.text_area("Review Lecture Notes:", value=st.session_state.get('master_notes', ""), height=150)
     
-    # SPEAK-TO-TABLE: Look for patterns like 'Science: 80' or 'Maths: 95'
-    table_items = re.findall(r"([\w\s]+)\s*[:]\s*(\d+)", current_notes)
-    if table_items:
-        st.info("📊 Data Table Extracted from Voice:")
-        df = pd.DataFrame(table_items, columns=["Category/Subject", "Value/Score"])
+    # --- AUTOMATIC TABLE GENERATION ---
+    # Patterns like 'Math: 90' trigger a table
+    table_data = re.findall(r"([\w\s]+)\s*[:]\s*(\d+)", current_notes)
+    if table_data:
+        st.info("📊 Data Table Detected:")
+        df = pd.DataFrame(table_data, columns=["Item", "Value"])
         st.table(df)
 
-    # Sync button to send data to Firebase
     if st.button("📢 Publish to Students"):
         if db and current_notes:
             db.collection("session").document("live").set({
                 "notes": current_notes,
-                "table": dict(table_items),
+                "table": dict(table_data),
                 "active": True
             })
-            st.success("Lecture synced to Student Portal!")
+            st.success("Lecture synced to Cloud!")
 
 # --- 5. STUDENT PORTAL ---
 else:
     st.header("👤 Student Portal")
     
-    # Check if student has joined (Attendance)
     if 'verified' not in st.session_state:
-        with st.form("Student_Attendance"):
-            s_name = st.text_input("Full Name")
-            s_roll = st.text_input("Roll Number")
-            if st.form_submit_button("Join Class"):
+        with st.form("Student_Login"):
+            s_name = st.text_input("Name")
+            s_roll = st.text_input("Roll No")
+            if st.form_submit_button("Join"):
                 if s_name and s_roll and db:
-                    # Save attendance record to Firestore
                     db.collection("attendance").document(s_roll).set({"Name": s_name, "Roll": s_roll})
                     st.session_state.verified = True
                     st.session_state.student_name = s_name
                     st.rerun()
     else:
-        st.success(f"Welcome, {st.session_state.student_name}!")
+        st.success(f"Verified: {st.session_state.student_name}")
         
-        # Multilingual Translation
         lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi"}
-        target_lang = st.selectbox("Select Display Language:", list(lang_map.keys()))
+        target_lang = st.selectbox("Translate to:", list(lang_map.keys()))
 
         if db:
-            # Fetch the latest lecture from Cloud
             live_ref = db.collection("session").document("live").get()
             if live_ref.exists:
-                raw_text = live_ref.to_dict().get("notes", "Lecture in progress...")
+                raw_text = live_ref.to_dict().get("notes", "")
                 
                 # Translation logic
                 if target_lang != "English":
@@ -151,19 +156,16 @@ else:
 
                 st.info(f"**Lecture Notes ({target_lang}):**\n\n{translated}")
                 
-                # Audio Playback (TTS)
                 if st.button("🔊 Read Aloud"):
-                    tts = gTTS(text=translated, lang=lang_map[target_lang])
-                    audio_fp = io.BytesIO()
-                    tts.write_to_fp(audio_fp)
-                    st.audio(audio_fp)
+                    with st.spinner("Generating Audio..."):
+                        tts = gTTS(text=translated, lang=lang_map[target_lang])
+                        audio_fp = io.BytesIO()
+                        tts.write_to_fp(audio_fp)
+                        st.audio(audio_fp)
 
         st.divider()
-        st.subheader("📂 Report Center")
-        
-        # PDF Generation for Students
-        if st.button("Download Class Report (PDF)"):
+        if st.button("📥 Download PDF Report"):
             if db:
-                current_data = db.collection("session").document("live").get().to_dict().get("notes", "No data")
-                report_pdf = create_pdf("NeuralBridge Lecture Report", [current_data])
-                st.download_button("Click to Save PDF", report_pdf, "Class_Report.pdf")
+                notes = db.collection("session").document("live").get().to_dict().get("notes", "")
+                pdf_bytes = create_pdf("NeuralBridge Report", notes, lang_code=lang_map[target_lang])
+                st.download_button("Download Now", pdf_bytes, "Lecture_Notes.pdf")
