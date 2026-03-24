@@ -2,7 +2,10 @@ import io
 import json
 import os
 import re
+import base64
+import tempfile
 from datetime import datetime, timezone
+from typing import List, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -11,7 +14,6 @@ from google.cloud import firestore
 from google.oauth2 import service_account
 from googletrans import Translator
 from gtts import gTTS
-from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
 
 
@@ -21,6 +23,30 @@ def _normalize_private_key(raw_key: str) -> str:
     # Trim accidental leading/trailing spaces per line.
     key = "\n".join(line.strip() for line in key.split("\n"))
     return key
+
+
+def extract_table_rows(notes: str) -> List[Tuple[str, str]]:
+    """
+    Extract simple table rows from free-form notes.
+    Supports:
+      - Key: Value
+      - Key - Value
+      - Key = Value
+    """
+    rows = []
+    if not notes:
+        return rows
+
+    for raw_line in notes.splitlines():
+        line = raw_line.strip(" -•\t")
+        if not line:
+            continue
+        match = re.match(r"^([A-Za-z][\w\s()/]{1,60})\s*[:=\-]\s*(.+)$", line)
+        if match:
+            key = match.group(1).strip()
+            value = match.group(2).strip()
+            rows.append((key, value))
+    return rows
 
 
 @st.cache_resource
@@ -59,7 +85,7 @@ def init_db():
         return None
 
 
-def create_pdf(title, content, lang_code="en"):
+def create_pdf(title, content, lang_code="en", table_data=None, diagram_bytes=None, diagram_ext="png"):
     pdf = FPDF()
     pdf.add_page()
 
@@ -81,6 +107,26 @@ def create_pdf(title, content, lang_code="en"):
     pdf.cell(0, 10, txt=title, ln=1, align="C")
     pdf.ln(5)
     pdf.multi_cell(0, 10, txt=str(content))
+
+    if table_data:
+        pdf.ln(5)
+        pdf.set_font_size(11)
+        pdf.multi_cell(0, 8, txt="Table Data (English):")
+        for key, value in table_data.items():
+            pdf.multi_cell(0, 8, txt=f"- {key}: {value}")
+
+    if diagram_bytes:
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{diagram_ext}") as tmp:
+                tmp.write(diagram_bytes)
+                img_path = tmp.name
+            pdf.ln(5)
+            pdf.multi_cell(0, 8, txt="Class Diagram:")
+            pdf.image(img_path, x=10, w=180)
+            os.unlink(img_path)
+        except Exception:
+            pdf.multi_cell(0, 8, txt="Diagram could not be embedded in PDF.")
+
     return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
@@ -93,6 +139,10 @@ if "translator" not in st.session_state:
     st.session_state.translator = Translator()
 if "master_notes" not in st.session_state:
     st.session_state.master_notes = ""
+if "diagram_payload" not in st.session_state:
+    st.session_state.diagram_payload = {}
+if "student_tts_cache" not in st.session_state:
+    st.session_state.student_tts_cache = {}
 
 
 if choice == "Teacher Dashboard":
@@ -101,19 +151,24 @@ if choice == "Teacher Dashboard":
 
     with col1:
         st.subheader("🔊 Live Lecture Capture")
-        audio = mic_recorder(
-            start_prompt="▶️ Start Recording",
-            stop_prompt="🛑 Stop & Process",
-            key="teacher_mic",
-        )
-        if audio:
+        st.caption("Stable mode: use WAV audio input (browser mic/file).")
+        speech_lang_map = {
+            "English (India)": "en-IN",
+            "Telugu": "te-IN",
+            "Hindi": "hi-IN",
+            "Tamil": "ta-IN",
+        }
+        speech_lang = st.selectbox("Lecture Voice Language", list(speech_lang_map.keys()), index=1)
+        wav_audio = st.audio_input("Record/Upload Lecture Audio (WAV)")
+
+        if wav_audio:
             recognizer = sr.Recognizer()
             try:
-                audio_file = io.BytesIO(audio["bytes"])
+                audio_file = io.BytesIO(wav_audio.getvalue())
                 with sr.AudioFile(audio_file) as source:
                     recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     audio_data = recognizer.record(source)
-                text = recognizer.recognize_google(audio_data, language="en-IN")
+                text = recognizer.recognize_google(audio_data, language=speech_lang_map[speech_lang])
                 st.session_state.master_notes = text
                 st.success("Voice Captured!")
             except Exception as e:
@@ -124,6 +179,11 @@ if choice == "Teacher Dashboard":
         img_file = st.file_uploader("Upload Class Diagram", type=["jpg", "png", "jpeg"])
         if img_file:
             st.image(img_file, caption="Live Diagram", width=300)
+            ext = "png" if img_file.type == "image/png" else "jpg"
+            st.session_state.diagram_payload = {
+                "data_b64": base64.b64encode(img_file.getvalue()).decode("utf-8"),
+                "ext": ext,
+            }
 
     st.divider()
     st.subheader("📝 Current Transcript")
@@ -133,7 +193,7 @@ if choice == "Teacher Dashboard":
         height=150,
     )
 
-    table_data = re.findall(r"([\w\s]+)\s*[:]\s*(\d+)", current_notes)
+    table_data = extract_table_rows(current_notes)
     if table_data:
         st.info("📊 Data Table Detected:")
         df = pd.DataFrame(table_data, columns=["Item", "Value"])
@@ -146,6 +206,7 @@ if choice == "Teacher Dashboard":
                     {
                         "notes": current_notes,
                         "table": dict(table_data),
+                        "diagram": st.session_state.get("diagram_payload", {}),
                         "active": True,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -202,7 +263,7 @@ else:
                     st.error("Database is not connected.")
     else:
         st.success(f"Verified: {st.session_state.student_name}")
-        lang_map = {"English": "en","Telugu": "te",  "Urdu": "ur", "Hindi": "hi",}
+        lang_map = {"English": "en", "Telugu": "te", "Hindi": "hi", "Tamil": "ta"}
         target_lang = st.selectbox("Translate to:", list(lang_map.keys()))
         target_code = lang_map[target_lang]
         st.button("🔄 Refresh Live Notes")
@@ -229,6 +290,21 @@ else:
                         st.caption(f"Last updated: {updated_at}")
                         st.info(f"**Lecture Notes ({target_lang}):**\n\n{translated}")
 
+                        # Auto-generate and autoplay audio for the selected language.
+                        tts_cache_key = f"{target_code}::{translated}"
+                        if tts_cache_key not in st.session_state.student_tts_cache:
+                            with st.spinner("Generating Audio..."):
+                                tts = gTTS(text=translated, lang=target_code)
+                                audio_fp = io.BytesIO()
+                                tts.write_to_fp(audio_fp)
+                                st.session_state.student_tts_cache[tts_cache_key] = audio_fp.getvalue()
+
+                        st.audio(
+                            st.session_state.student_tts_cache[tts_cache_key],
+                            format="audio/mp3",
+                            autoplay=True,
+                        )
+
                         if st.button("🔊 Read Aloud"):
                             with st.spinner("Generating Audio..."):
                                 tts = gTTS(text=translated, lang=target_code)
@@ -247,6 +323,33 @@ else:
         if st.button("📥 Download PDF Report"):
             if db:
                 notes_doc = db.collection("session").document("live").get()
-                notes = notes_doc.to_dict().get("notes", "") if notes_doc.exists else ""
-                pdf_bytes = create_pdf("NeuralBridge Report", notes, lang_code=target_code)
+                payload = notes_doc.to_dict() if notes_doc.exists else {}
+                notes = payload.get("notes", "")
+                table_payload = payload.get("table", {}) or {}
+                diagram_payload = payload.get("diagram", {}) or {}
+
+                # Keep lecture notes in selected language; table/diagram labels remain English.
+                notes_for_pdf = notes
+                if target_lang != "English" and notes.strip():
+                    try:
+                        notes_for_pdf = st.session_state.translator.translate(notes, dest=target_code).text
+                    except Exception:
+                        notes_for_pdf = notes
+
+                diagram_bytes = None
+                diagram_ext = diagram_payload.get("ext", "png")
+                if diagram_payload.get("data_b64"):
+                    try:
+                        diagram_bytes = base64.b64decode(diagram_payload["data_b64"])
+                    except Exception:
+                        diagram_bytes = None
+
+                pdf_bytes = create_pdf(
+                    "NeuralBridge Report",
+                    notes_for_pdf,
+                    lang_code=target_code,
+                    table_data=table_payload,
+                    diagram_bytes=diagram_bytes,
+                    diagram_ext=diagram_ext,
+                )
                 st.download_button("Download Now", pdf_bytes, "Lecture_Notes.pdf", mime="application/pdf")
